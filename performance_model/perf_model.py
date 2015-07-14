@@ -70,6 +70,20 @@ class GPUStats(object):
             self.SM_count = 16  #
             self.max_threads_per_SM = 1024
             self.max_blocks_per_SM = 8
+        if (gpu_name == 'TeslaK20'):
+            self.threads_per_warp = 32
+            self.issue_cycles = 4
+            self.sm_clock_freq = 0.706  #
+            self.mem_bandwidth = 208  #
+            self.DRAM_access_latency = 230  # from Kumar, 2014
+            self.departure_del_coal = 1  # TODO Is this correct?
+            self.departure_del_uncoal = 10  # TODO Is this correct?
+            self.mem_trans_per_warp_coal = 1  # TODO Is this correct?
+            self.mem_trans_per_warp_uncoal = 32  # TODO check on this
+            self.SM_count = 13  #
+            self.max_threads_per_SM = 2048
+            self.max_blocks_per_SM = 16
+
         else:
             print "Error: unknown hardware"
         #TODO use compute capability to get some of these numbers
@@ -123,11 +137,13 @@ class PerfModel(object):
         self.active_blocks_per_SM = min(
                 GPU_stats.max_threads_per_SM/thread_config.threads_per_block,
                 GPU_stats.max_blocks_per_SM)
-        self.active_blocks_per_SM = 5  # TODO
+        print("self.active_blocks_per_SM: ",self.active_blocks_per_SM)
+        #self.active_blocks_per_SM = 5  # TODO
         self.active_SMs = min(
                             thread_config.blocks/self.active_blocks_per_SM,
                             GPU_stats.SM_count)  # TODO
-        self.active_SMs = 16  # TODO
+        print("self.active_SMs: ",self.active_SMs)
+        #self.active_SMs = 16  # TODO
         self.active_warps_per_SM = self.active_blocks_per_SM * \
                     thread_config.threads_per_block/GPU_stats.threads_per_warp
 
