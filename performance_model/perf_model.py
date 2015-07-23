@@ -57,7 +57,7 @@ class GPUStats(object):
             self.SM_count = 30
             self.max_threads_per_SM = 1024
             self.max_blocks_per_SM = 8
-        if (gpu_name == 'HKexample'):
+        elif (gpu_name == 'HKexample'):
             self.threads_per_warp = 32
             self.issue_cycles = 4
             self.sm_clock_freq = 1.0  #
@@ -70,7 +70,7 @@ class GPUStats(object):
             self.SM_count = 16  #
             self.max_threads_per_SM = 1024
             self.max_blocks_per_SM = 8
-        if (gpu_name == 'TeslaK20'):
+        elif (gpu_name == 'TeslaK20'):
             self.threads_per_warp = 32
             self.issue_cycles = 4
             self.sm_clock_freq = 0.706  #
@@ -83,7 +83,6 @@ class GPUStats(object):
             self.SM_count = 13  #
             self.max_threads_per_SM = 2048
             self.max_blocks_per_SM = 16
-
         else:
             print "Error: unknown hardware"
         #TODO use compute capability to get some of these numbers
@@ -122,14 +121,7 @@ class PerfModel(object):
         self.GPU_stats = GPU_stats
         self.kernel_stats = kernel_stats
         self.thread_config = thread_config
-
-        if (dtype == 'float'):
-            data_size = 4
-        elif (dtype == 'double'):
-            data_size = 8
-        else:
-            print "WARNING: data type ", dtype, " unknown, using float instead"
-            data_size = 4
+	data_size = dtype.itemsize
 
         self.load_bytes_per_warp = GPU_stats.threads_per_warp * data_size
 
@@ -141,13 +133,12 @@ class PerfModel(object):
         #self.active_blocks_per_SM = 5  # TODO
         self.active_SMs = min(
                             thread_config.blocks/self.active_blocks_per_SM,
-                            GPU_stats.SM_count)  # TODO
-        print("self.active_SMs: ",self.active_SMs)
-        #self.active_SMs = 16  # TODO
+                            GPU_stats.SM_count)
+        print("DEBUGGING... self.active_SMs: ",self.active_SMs)
         self.active_warps_per_SM = self.active_blocks_per_SM * \
                     thread_config.threads_per_block/GPU_stats.threads_per_warp
 
-    def compute_time(self):
+    def compute_exec_cycles(self):
 
         mem_l_uncoal = self.GPU_stats.DRAM_access_latency + (self.GPU_stats.mem_trans_per_warp_uncoal - 1)  \
                         * self.GPU_stats.departure_del_uncoal
