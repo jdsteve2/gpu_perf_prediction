@@ -129,7 +129,7 @@ class PerfModel(object):
         self.active_blocks_per_SM = min(
                 GPU_stats.max_threads_per_SM/thread_config.threads_per_block,
                 GPU_stats.max_blocks_per_SM)
-        print("self.active_blocks_per_SM: ",self.active_blocks_per_SM)
+        print("DEBUGGING... self.active_blocks_per_SM: ",self.active_blocks_per_SM)
         #self.active_blocks_per_SM = 5  # TODO
         self.active_SMs = min(
                             thread_config.blocks/self.active_blocks_per_SM,

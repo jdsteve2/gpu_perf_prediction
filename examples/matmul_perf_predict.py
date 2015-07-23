@@ -16,7 +16,7 @@ queue = cl.CommandQueue(ctx, properties=cl.command_queue_properties.PROFILING_EN
 devices = ctx.get_info(cl.context_info.DEVICES)
 print "devices: \n", devices
 
-n = 2**13
+n = 2**12
 a_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=np.float32)
 b_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=np.float32)
 c_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=np.float32)
