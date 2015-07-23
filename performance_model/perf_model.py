@@ -107,6 +107,14 @@ class KernelStats(object):
         self.mem_instructions = mem_instructions_uncoal + mem_instructions_coal
         self.total_instructions = comp_instructions + self.mem_instructions
 
+    def __str__(self):
+        return "\ncomp_insns: " + str(self.comp_instructions) + \
+               "\nmem_insns_uncoal: " + str(self.mem_instructions_uncoal) + \
+               "\nmem_insns_coal: " + str(self.mem_instructions_coal) + \
+               "\nmem_insns_total: " + str(self.mem_instructions) + \
+               "\nsynch_insns: " + str(self.synch_instructions) + \
+               "\ntotal_insns: " + str(self.total_instructions)
+
 
 class ThreadConfig(object):
     def __init__(self, threads_per_block, blocks):

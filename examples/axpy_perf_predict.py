@@ -15,31 +15,32 @@ queue = cl.CommandQueue(ctx, properties=cl.command_queue_properties.PROFILING_EN
 
 #print "devices: \n", ctx.get_info(cl.context_info.DEVICES)
 
-n = 2**10
-a_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=np.float32)
-b_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=np.float32)
-c_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=np.float32)
+n = 2**24
+x_vec_dev = cl.clrandom.rand(queue, n, dtype=np.float32)
+y_vec_dev = cl.clrandom.rand(queue, n, dtype=np.float32)
+z_vec_dev = cl.clrandom.rand(queue, n, dtype=np.float32)
 
-order = "C"
+dtype = np.float32
 knl = lp.make_kernel(
-    "{[i,j,k]: 0<=i,j,k<%d}" % n,
+    "[n] -> {[i]: 0<=i<%d}" % n,
     [
-        "c[i, j] = sum(k, a[i, k]*b[k, j])"
+        "z[i] = 5.0*x[i]+7.0*y[i]"
         ],
     [
-        lp.GlobalArg("a", np.float32, shape=(n, n), order=order),
-        lp.GlobalArg("b", np.float32, shape=(n, n), order=order),
-        lp.GlobalArg("c", np.float32, shape=(n, n), order=order),
+        lp.GlobalArg("x", dtype, shape=n),
+        lp.GlobalArg("y", dtype, shape=n),
+        lp.GlobalArg("z", dtype, shape=n),
         ],
-    name="matmul")
+    name="axpy")
 
 ref_knl = knl 
 
-knl = lp.split_iname(knl, "i", 16, outer_tag="g.0", inner_tag="l.1")
-knl = lp.split_iname(knl, "j", 16, outer_tag="g.1", inner_tag="l.0")
-knl = lp.split_iname(knl, "k", 16)
-knl = lp.add_prefetch(knl, "a", ["k_inner", "i_inner"])
-knl = lp.add_prefetch(knl, "b", ["j_inner", "k_inner", ])
+unroll = 4
+block_size = 256
+knl = lp.split_iname(knl, "i", unroll*block_size,
+     outer_tag="g.0", slabs=(0, 1))
+knl = lp.split_iname(knl, "i_inner", block_size,
+     outer_tag="unr", inner_tag="l.0")
 
 check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=True)
 #print "Correctness check: \n", check
@@ -62,21 +63,23 @@ f32coal_s = sub_map.dict[
                     (np.dtype(np.float32), 'consecutive', 'store')
                     ].eval_with_dict({'n': n})
 f32coal = f32coal_l + f32coal_s
-#print "coalesced: %i, (stores: %i, loads: %i)" % (f32coal, f32coal_s, f32coal_l)
+print "coalesced: %i, (stores: %i, loads: %i)" % (f32coal, f32coal_s, f32coal_l)
 print "="*40
 
 # execute
 # -------
 print "running kernel..."
 #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
-evt, (out,) = knl(queue, a=a_mat_dev, b=b_mat_dev, c=c_mat_dev)
+evt, (out,) = knl(queue, x=x_vec_dev, y=y_vec_dev, z=z_vec_dev)
 evt.wait()
 print "actual runtime: ", (evt.profile.END - evt.profile.START)*1e-9
 
 gstats = GPUStats('TeslaK20')
-total_threads = n*n
+total_threads = n/4
 kstats = KernelStats(float(flops)/total_threads, 0, float(f32coal)/total_threads, float(barrier_count))
-tconfig = ThreadConfig(16*16, n/16*n/16)
+print "kstats: \n", kstats
+
+tconfig = ThreadConfig(256, n/(256*4))
 
 model = PerfModel(gstats, kstats, tconfig, np.dtype(np.float32))
 cycles = model.compute_exec_cycles()
