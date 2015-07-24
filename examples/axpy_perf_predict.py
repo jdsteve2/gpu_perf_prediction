@@ -7,6 +7,7 @@ from loopy.statistics import get_op_poly, get_DRAM_access_poly, get_barrier_poly
 import sys
 sys.path.append("../performance_model")
 from perf_model import GPUStats, KernelStats, ThreadConfig, PerfModel
+import islpy as isl
 
 # setup
 # -----
@@ -36,10 +37,10 @@ knl = lp.make_kernel(
 ref_knl = knl 
 
 unroll = 4
-block_size = 256
-knl = lp.split_iname(knl, "i", unroll*block_size,
+BLOCKSIZE = 256
+knl = lp.split_iname(knl, "i", unroll*BLOCKSIZE,
      outer_tag="g.0", slabs=(0, 1))
-knl = lp.split_iname(knl, "i_inner", block_size,
+knl = lp.split_iname(knl, "i_inner", BLOCKSIZE,
      outer_tag="unr", inner_tag="l.0")
 
 check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=True)
@@ -55,7 +56,7 @@ print "flops: ", flops
 
 sub_map = get_DRAM_access_poly(knl)  # noqa
 print(sub_map)
-
+'''
 f32coal_l = sub_map.dict[
                     (np.dtype(np.float32), 'consecutive', 'load')
                     ].eval_with_dict({'n': n})
@@ -64,6 +65,30 @@ f32coal_s = sub_map.dict[
                     ].eval_with_dict({'n': n})
 f32coal = f32coal_l + f32coal_s
 print "coalesced: %i, (stores: %i, loads: %i)" % (f32coal, f32coal_s, f32coal_l)
+'''
+
+f32coal_l = sub_map.dict.get(
+                    (np.dtype(np.float32), 'consecutive', 'load')
+                    ,isl.PwQPolynomial('{ 0 }')
+                    ).eval_with_dict({'n': n})
+f32coal_s = sub_map.dict.get(
+                    (np.dtype(np.float32), 'consecutive', 'store')
+                    ,isl.PwQPolynomial('{ 0 }')
+                    ).eval_with_dict({'n': n})
+f32coal = f32coal_l + f32coal_s
+print "coalesced: %i, (stores: %i, loads: %i)" % (f32coal, f32coal_s, f32coal_l)
+f32uncoal_l = sub_map.dict.get(
+                    (np.dtype(np.float32), 'nonconsecutive', 'load')
+                    ,isl.PwQPolynomial('{ 0 }')
+                    ).eval_with_dict({'n': n})
+f32uncoal_s = sub_map.dict.get(
+                    (np.dtype(np.float32), 'nonconsecutive', 'store')
+                    ,isl.PwQPolynomial('{ 0 }')
+                    ).eval_with_dict({'n': n})
+f32uncoal = f32uncoal_l + f32uncoal_s
+print "uncoalesced: %i, (stores: %i, loads: %i)" % (f32uncoal, f32uncoal_s, f32uncoal_l)
+
+
 print "="*40
 
 # execute

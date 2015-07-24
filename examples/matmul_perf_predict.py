@@ -7,13 +7,13 @@ from loopy.statistics import get_op_poly, get_DRAM_access_poly, get_barrier_poly
 import sys
 sys.path.append("../performance_model")
 from perf_model import GPUStats, KernelStats, ThreadConfig, PerfModel
+import islpy as isl
 
 # setup
 # -----
 ctx = cl.create_some_context()
+print "devices: \n", ctx.get_info(cl.context_info.DEVICES)
 queue = cl.CommandQueue(ctx, properties=cl.command_queue_properties.PROFILING_ENABLE)
-
-#print "devices: \n", ctx.get_info(cl.context_info.DEVICES)
 
 n = 2**10
 a_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=np.float32)
@@ -35,9 +35,11 @@ knl = lp.make_kernel(
 
 ref_knl = knl 
 
-knl = lp.split_iname(knl, "i", 16, outer_tag="g.0", inner_tag="l.1")
-knl = lp.split_iname(knl, "j", 16, outer_tag="g.1", inner_tag="l.0")
-knl = lp.split_iname(knl, "k", 16)
+BLOCKSIZE = 16
+
+knl = lp.split_iname(knl, "i", BLOCKSIZE, outer_tag="g.0", inner_tag="l.1")
+knl = lp.split_iname(knl, "j", BLOCKSIZE, outer_tag="g.1", inner_tag="l.0")
+knl = lp.split_iname(knl, "k", BLOCKSIZE)
 knl = lp.add_prefetch(knl, "a", ["k_inner", "i_inner"])
 knl = lp.add_prefetch(knl, "b", ["j_inner", "k_inner", ])
 
@@ -55,14 +57,26 @@ print "flops: ", flops
 sub_map = get_DRAM_access_poly(knl)  # noqa
 print(sub_map)
 
-f32coal_l = sub_map.dict[
+f32coal_l = sub_map.dict.get(
                     (np.dtype(np.float32), 'consecutive', 'load')
-                    ].eval_with_dict({'n': n})
-f32coal_s = sub_map.dict[
+                    ,isl.PwQPolynomial('{ 0 }')
+                    ).eval_with_dict({'n': n})
+f32coal_s = sub_map.dict.get(
                     (np.dtype(np.float32), 'consecutive', 'store')
-                    ].eval_with_dict({'n': n})
+                    ,isl.PwQPolynomial('{ 0 }')
+                    ).eval_with_dict({'n': n})
 f32coal = f32coal_l + f32coal_s
-#print "coalesced: %i, (stores: %i, loads: %i)" % (f32coal, f32coal_s, f32coal_l)
+print "coalesced: %i, (stores: %i, loads: %i)" % (f32coal, f32coal_s, f32coal_l)
+f32uncoal_l = sub_map.dict.get(
+                    (np.dtype(np.float32), 'nonconsecutive', 'load')
+                    ,isl.PwQPolynomial('{ 0 }')
+                    ).eval_with_dict({'n': n})
+f32uncoal_s = sub_map.dict.get(
+                    (np.dtype(np.float32), 'nonconsecutive', 'store')
+                    ,isl.PwQPolynomial('{ 0 }')
+                    ).eval_with_dict({'n': n})
+f32uncoal = f32uncoal_l + f32uncoal_s
+print "uncoalesced: %i, (stores: %i, loads: %i)" % (f32uncoal, f32uncoal_s, f32uncoal_l)
 print "="*40
 
 # execute
@@ -75,8 +89,8 @@ print "actual runtime: ", (evt.profile.END - evt.profile.START)*1e-9
 
 gstats = GPUStats('TeslaK20')
 total_threads = n*n
-kstats = KernelStats(float(flops)/total_threads, 0, float(f32coal)/total_threads, float(barrier_count))
-tconfig = ThreadConfig(16*16, n/16*n/16)
+kstats = KernelStats(float(flops)/total_threads, float(f32uncoal)/total_threads, float(f32coal)/total_threads, float(barrier_count))
+tconfig = ThreadConfig(BLOCKSIZE*BLOCKSIZE, n/BLOCKSIZE*n/BLOCKSIZE)
 
 model = PerfModel(gstats, kstats, tconfig, np.dtype(np.float32))
 cycles = model.compute_exec_cycles()

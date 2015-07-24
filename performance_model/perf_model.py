@@ -37,9 +37,9 @@ class GPUStats(object):
     # issue_cycles:                 number of cycles to execute one instruction
     # sm_clock_freq:                clock frequency of the SMs, renamed from "Freq"
     # mem_bandwidth:                bandwidth between DRAM and GPU cores
-    # DRAM_access_latency:          DRAM access latency, renamed from "Mem_LD"
-    # departure_del_coal:           delay between two coalesced mem transactions (cycles?)#TODO
-    # departure_del_uncoal:         delay between two uncoalesced mem transactions (cycles?)#TODO
+    # DRAM_access_latency:          DRAM access latency, renamed from "Mem_LD" (cycles?)
+    # departure_del_coal:           delay between two coalesced mem transactions (cycles)
+    # departure_del_uncoal:         delay between two uncoalesced mem transactions (cycles)
     # mem_trans_per_warp_coal:      number of mem transactions per warp (coalesced)
     # mem_trans_per_warp_uncoal:    number of mem transactions per warp (uncoalsced)
 
@@ -75,9 +75,11 @@ class GPUStats(object):
             self.issue_cycles = 4
             self.sm_clock_freq = 0.706  #
             self.mem_bandwidth = 208  #
-            self.DRAM_access_latency = 230  # from Kumar, 2014
-            self.departure_del_coal = 1  # TODO Is this correct?
-            self.departure_del_uncoal = 10  # TODO Is this correct?
+            self.DRAM_access_latency = 230  # 230 from Kumar, 2014  TODO correct?
+            self.departure_del_coal = 1  # from Krishnamani, Clemson U, 2014, for K20
+            # TODO Is this correct?
+            self.departure_del_uncoal = 38  # from Krishnamani, Clemson U, 2014, for K20
+            # TODO Is this correct?
             self.mem_trans_per_warp_coal = 1  # TODO Is this correct?
             self.mem_trans_per_warp_uncoal = 32  # TODO check on this
             self.SM_count = 13  #
@@ -95,7 +97,7 @@ class KernelStats(object):
     # mem_instructions_coal:    number of coalesced memory instructions in one thread
     # synch_instructions:       total dynamic # of synch instructions in one thread
     # mem_instructions:         mem_instructions_uncoal + mem_instructions_coal
-                                #TODO make sure this is correct
+                                #TODO paper does not explain this, make sure this is correct
     # total_instructions:       comp_instructions + mem_instructions
 
     def __init__(self, comp_instructions, mem_instructions_uncoal,
@@ -134,6 +136,7 @@ class PerfModel(object):
         self.load_bytes_per_warp = GPU_stats.threads_per_warp * data_size
 
         #TODO calculate this correctly figuring in register/shared mem usage
+        # (how many blocks can run simultaneously on a SM)
         self.active_blocks_per_SM = min(
                 GPU_stats.max_threads_per_SM/thread_config.threads_per_block,
                 GPU_stats.max_blocks_per_SM)
@@ -142,7 +145,7 @@ class PerfModel(object):
         self.active_SMs = min(
                             thread_config.blocks/self.active_blocks_per_SM,
                             GPU_stats.SM_count)
-        print("DEBUGGING... self.active_SMs: ",self.active_SMs)
+        #print("DEBUGGING... self.active_SMs: ",self.active_SMs)
         self.active_warps_per_SM = self.active_blocks_per_SM * \
                     thread_config.threads_per_block/GPU_stats.threads_per_warp
 
@@ -186,10 +189,8 @@ class PerfModel(object):
             exec_cycles_app = (mem_cycles * n/MWP +
                                comp_cycles/self.kernel_stats.mem_instructions *
                                (MWP-1))*rep
-        elif (MWP > CWP):
+        else:  # (MWP > CWP)
             exec_cycles_app = (mem_l + comp_cycles * n) * rep
-        else:
-            print "Error..."
 
         synch_cost = departure_delay * (MWP-1) *  \
                      self.kernel_stats.synch_instructions * \
