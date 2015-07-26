@@ -46,6 +46,13 @@ knl = lp.add_prefetch(knl, "b", ["j_inner", "k_inner", ])
 check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=True)
 #print "Correctness check: \n", check
 
+# figure out reg count
+#knl = lp.add_and_infer_dtypes(knl,{})
+cknl = lp.compiled.CompiledKernel(ctx, knl)
+ptx_src = cknl.cl_kernel_info().kernel.program.binaries[0]
+print "ptx_src: \n", ptx_src
+
+
 barrier_poly = get_barrier_poly(knl)
 barrier_count = barrier_poly.eval_with_dict({'n': n})
 print "barrier count: ", barrier_count
