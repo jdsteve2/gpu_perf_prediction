@@ -49,7 +49,7 @@ check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=True)
 # figure out reg count
 #knl = lp.add_and_infer_dtypes(knl,{})
 cknl = lp.compiled.CompiledKernel(ctx, knl)
-ptx_src = cknl.cl_kernel_info().kernel.program.binaries[0]
+ptx_src = cknl.cl_kernel_info().cl_kernel.program.binaries[0]
 print "ptx_src: \n", ptx_src
 
 
