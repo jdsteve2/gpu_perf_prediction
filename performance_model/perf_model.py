@@ -31,19 +31,20 @@ THE SOFTWARE.
 
 # parameters from Table 1 in Hong Kim paper
 
+
 class GPUStats(object):
 
-    # threads_per_warp:             number of threads per warp
-    # issue_cycles:                 number of cycles to execute one instruction
-    # sm_clock_freq:                clock frequency of the SMs, renamed from "Freq"
-    # mem_bandwidth:                bandwidth between DRAM and GPU cores
-    # DRAM_access_latency:          DRAM access latency, renamed from "Mem_LD" (cycles?)
-    # departure_del_coal:           delay between two coalesced mem transactions (cycles)
-    # departure_del_uncoal:         delay between two uncoalesced mem transactions (cycles)
-    # mem_trans_per_warp_coal:      number of mem transactions per warp (coalesced)
-    # mem_trans_per_warp_uncoal:    number of mem transactions per warp (uncoalsced)
+    # threads_per_warp:           number of threads per warp
+    # issue_cycles:               number of cycles to execute one instruction
+    # sm_clock_freq:              clock frequency of the SMs, renamed from "Freq"
+    # mem_bandwidth:              bandwidth between DRAM and GPU cores
+    # DRAM_access_latency:        DRAM access latency, renamed from Mem_LD (cycles?)
+    # departure_del_coal:         delay between two coalesced mem trans (cycles)
+    # departure_del_uncoal:       delay between two uncoalesced mem trans (cycles)
+    # mem_trans_per_warp_coal:    number of mem transactions per warp (coalesced)
+    # mem_trans_per_warp_uncoal:  number of mem transactions per warp (uncoalsced)
 
-    def __init__(self,gpu_name):
+    def __init__(self, gpu_name):
         if (gpu_name == 'GTX280'):
             self.threads_per_warp = 32
             self.issue_cycles = 4
@@ -77,9 +78,9 @@ class GPUStats(object):
             self.mem_bandwidth = 208  #
             self.DRAM_access_latency = 230  # 230 from Kumar, 2014  TODO correct?
             self.departure_del_coal = 1  # from Krishnamani, Clemson U, 2014, for K20
-            # TODO Is this correct?
-            self.departure_del_uncoal = 38  # from Krishnamani, Clemson U, 2014, for K20
-            # TODO Is this correct?
+            # TODO Is this^ correct?
+            self.departure_del_uncoal = 38
+            # TODO Is this^ correct? from Krishnamani, Clemson U, 2014, for K20
             self.mem_trans_per_warp_coal = 1  # TODO Is this correct?
             self.mem_trans_per_warp_uncoal = 32  # TODO check on this
             self.SM_count = 13  #
@@ -97,7 +98,7 @@ class KernelStats(object):
     # mem_instructions_coal:    number of coalesced memory instructions in one thread
     # synch_instructions:       total dynamic # of synch instructions in one thread
     # mem_instructions:         mem_instructions_uncoal + mem_instructions_coal
-                                #TODO paper does not explain this, make sure this is correct
+                        #TODO paper does not explain this, make sure it's correct
     # total_instructions:       comp_instructions + mem_instructions
 
     def __init__(self, comp_instructions, mem_instructions_uncoal,
@@ -131,7 +132,7 @@ class PerfModel(object):
         self.GPU_stats = GPU_stats
         self.kernel_stats = kernel_stats
         self.thread_config = thread_config
-	data_size = dtype.itemsize
+        data_size = dtype.itemsize
 
         self.load_bytes_per_warp = GPU_stats.threads_per_warp * data_size
 
@@ -140,7 +141,7 @@ class PerfModel(object):
         self.active_blocks_per_SM = min(
                 GPU_stats.max_threads_per_SM/thread_config.threads_per_block,
                 GPU_stats.max_blocks_per_SM)
-        print("DEBUGGING... self.active_blocks_per_SM: ",self.active_blocks_per_SM)
+        print("DEBUGGING... self.active_blocks_per_SM: ", self.active_blocks_per_SM)
         #self.active_blocks_per_SM = 5  # TODO
         self.active_SMs = min(
                             thread_config.blocks/self.active_blocks_per_SM,
@@ -151,8 +152,9 @@ class PerfModel(object):
 
     def compute_exec_cycles(self):
 
-        mem_l_uncoal = self.GPU_stats.DRAM_access_latency + (self.GPU_stats.mem_trans_per_warp_uncoal - 1)  \
-                        * self.GPU_stats.departure_del_uncoal
+        mem_l_uncoal = self.GPU_stats.DRAM_access_latency + (
+                       self.GPU_stats.mem_trans_per_warp_uncoal - 1) * \
+                       self.GPU_stats.departure_del_uncoal
         mem_l_coal = self.GPU_stats.DRAM_access_latency
         weight_uncoal = self.kernel_stats.mem_instructions_uncoal/(
                         self.kernel_stats.mem_instructions_uncoal +
@@ -196,9 +198,5 @@ class PerfModel(object):
                      self.kernel_stats.synch_instructions * \
                      self.active_blocks_per_SM*rep
         return exec_cycles_app+synch_cost
-
-
-
-
 
 
