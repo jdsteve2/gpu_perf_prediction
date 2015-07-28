@@ -110,7 +110,7 @@ kstats = KernelStats(float(flops)/total_threads, float(f32uncoal)/total_threads,
                      float(f32coal)/total_threads, float(barrier_count))
 tconfig = ThreadConfig(BLOCKSIZE, n/(BLOCKSIZE*unroll))
 
-model = PerfModel(gstats, kstats, tconfig, np.dtype(np.float32))
+model = PerfModel(gstats, kstats, tconfig, np.dtype(np.float32), active_blocks=8)
 cycles = model.compute_exec_cycles()
 print "actual runtime: ", (evt.profile.END - evt.profile.START)*1e-9
 print "total predicted time: ", cycles/(gstats.sm_clock_freq*10**9)

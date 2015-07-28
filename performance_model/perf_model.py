@@ -36,13 +36,13 @@ class GPUStats(object):
 
     # threads_per_warp:           number of threads per warp
     # issue_cycles:               number of cycles to execute one instruction
-    # sm_clock_freq:              clock frequency of the SMs, renamed from "Freq"
-    # mem_bandwidth:              bandwidth between DRAM and GPU cores
-    # DRAM_access_latency:        DRAM access latency, renamed from Mem_LD (cycles?)
-    # departure_del_coal:         delay between two coalesced mem trans (cycles)
-    # departure_del_uncoal:       delay between two uncoalesced mem trans (cycles)
-    # mem_trans_per_warp_coal:    number of mem transactions per warp (coalesced)
-    # mem_trans_per_warp_uncoal:  number of mem transactions per warp (uncoalsced)
+    # sm_clock_freq:              clock frequency of SMs (Hz), renamed from "Freq"
+    # mem_bandwidth:              bandwidth between DRAM and GPU cores (Gbit/s)
+    # DRAM_access_latency:        DRAM access latency, renamed from Mem_LD (?cycles)
+    # departure_del_coal:         delay between two coalesced mem trans (?cycles)
+    # departure_del_uncoal:       delay between two uncoalesced mem trans (?cycles)
+    # mem_trans_per_warp_coal:    number of coalsced mem transactions per warp coalesced
+    # mem_trans_per_warp_uncoal:  number of uncoalsced mem transactions per warp
 
     def __init__(self, gpu_name):
         if (gpu_name == 'GTX280'):
@@ -61,21 +61,21 @@ class GPUStats(object):
         elif (gpu_name == 'HKexample'):
             self.threads_per_warp = 32
             self.issue_cycles = 4
-            self.sm_clock_freq = 1.0  #
-            self.mem_bandwidth = 80  #
-            self.DRAM_access_latency = 420  #
-            self.departure_del_coal = 1  #
-            self.departure_del_uncoal = 10  #
-            self.mem_trans_per_warp_coal = 1  #
-            self.mem_trans_per_warp_uncoal = 32  #
-            self.SM_count = 16  #
+            self.sm_clock_freq = 1.0
+            self.mem_bandwidth = 80
+            self.DRAM_access_latency = 420
+            self.departure_del_coal = 1
+            self.departure_del_uncoal = 10
+            self.mem_trans_per_warp_coal = 1
+            self.mem_trans_per_warp_uncoal = 32
+            self.SM_count = 16
             self.max_threads_per_SM = 1024
             self.max_blocks_per_SM = 8
         elif (gpu_name == 'TeslaK20'):
             self.threads_per_warp = 32
             self.issue_cycles = 4
-            self.sm_clock_freq = 0.706  #
-            self.mem_bandwidth = 208  #
+            self.sm_clock_freq = 0.706
+            self.mem_bandwidth = 208
             self.DRAM_access_latency = 230  # 230 from Kumar, 2014  TODO correct?
             self.departure_del_coal = 1  # from Krishnamani, Clemson U, 2014, for K20
             # TODO Is this^ correct?
@@ -83,7 +83,7 @@ class GPUStats(object):
             # TODO Is this^ correct? from Krishnamani, Clemson U, 2014, for K20
             self.mem_trans_per_warp_coal = 1  # TODO Is this correct?
             self.mem_trans_per_warp_uncoal = 32  # TODO check on this
-            self.SM_count = 13  #
+            self.SM_count = 13
             self.max_threads_per_SM = 2048
             self.max_blocks_per_SM = 16
         else:
@@ -93,10 +93,10 @@ class GPUStats(object):
 
 class KernelStats(object):
 
-    # comp_instructions:        total dynamic # of computation ins'ns in 1 thread
-    # mem_instructions_uncoal:  # of uncoalesced memory instructions in one thread
-    # mem_instructions_coal:    number of coalesced memory instructions in one thread
-    # synch_instructions:       total dynamic # of synch instructions in one thread
+    # comp_instructions:        total dynamic # of computation ins'ns per thread
+    # mem_instructions_uncoal:  # of uncoalesced memory instructions per thread
+    # mem_instructions_coal:    number of coalesced memory instructions per thread
+    # synch_instructions:       total dynamic # of synch instructions per thread
     # mem_instructions:         mem_instructions_uncoal + mem_instructions_coal
                         #TODO paper does not explain this, make sure it's correct
     # total_instructions:       comp_instructions + mem_instructions
@@ -127,8 +127,8 @@ class ThreadConfig(object):
 
 class PerfModel(object):
 
-    def __init__(self, GPU_stats, kernel_stats, thread_config, dtype):
-
+    def __init__(self, GPU_stats, kernel_stats, thread_config, dtype,
+                                                    active_blocks=None):
         self.GPU_stats = GPU_stats
         self.kernel_stats = kernel_stats
         self.thread_config = thread_config
@@ -138,11 +138,14 @@ class PerfModel(object):
 
         #TODO calculate this correctly figuring in register/shared mem usage
         # (how many blocks can run simultaneously on a SM)
-        self.active_blocks_per_SM = min(
+        if active_blocks is None:
+            self.active_blocks_per_SM = min(
                 GPU_stats.max_threads_per_SM/thread_config.threads_per_block,
                 GPU_stats.max_blocks_per_SM)
+        else:
+            self.active_blocks_per_SM = active_blocks
+
         print("DEBUGGING... self.active_blocks_per_SM: ", self.active_blocks_per_SM)
-        #self.active_blocks_per_SM = 5  # TODO
         self.active_SMs = min(
                             thread_config.blocks/self.active_blocks_per_SM,
                             GPU_stats.SM_count)
