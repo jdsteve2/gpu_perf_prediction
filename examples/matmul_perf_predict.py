@@ -107,8 +107,7 @@ evt.wait()
 gstats = GPUStats('TeslaK20')
 total_threads = n*n
 kstats = KernelStats(float(flops)/total_threads, float(f32uncoal)/total_threads, 
-
-float(f32coal)/total_threads, float(barrier_count))
+                     float(f32coal)/total_threads, float(barrier_count))
 tconfig = ThreadConfig(BLOCKSIZE*BLOCKSIZE, n/BLOCKSIZE*n/BLOCKSIZE)
 
 model = PerfModel(gstats, kstats, tconfig, np.dtype(np.float32))
