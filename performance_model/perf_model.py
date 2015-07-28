@@ -36,8 +36,8 @@ class GPUStats(object):
 
     # threads_per_warp:           number of threads per warp
     # issue_cycles:               number of cycles to execute one instruction
-    # sm_clock_freq:              clock frequency of SMs (Hz), renamed from "Freq"
-    # mem_bandwidth:              bandwidth between DRAM and GPU cores (Gbit/s)
+    # sm_clock_freq:              clock frequency of SMs (GHz), renamed from "Freq"
+    # mem_bandwidth:              bandwidth between DRAM and GPU cores (GB/s)
     # DRAM_access_latency:        DRAM access latency, renamed from Mem_LD (?cycles)
     # departure_del_coal:         delay between two coalesced mem trans (?cycles)
     # departure_del_uncoal:       delay between two uncoalesced mem trans (?cycles)
@@ -47,16 +47,29 @@ class GPUStats(object):
     def __init__(self, gpu_name):
         if (gpu_name == 'GTX280'):
             self.threads_per_warp = 32
-            self.issue_cycles = 4
+            self.issue_cycles = 4  #?
             self.sm_clock_freq = 1.3
             self.mem_bandwidth = 141.7
             self.DRAM_access_latency = 450
             self.departure_del_coal = 4
             self.departure_del_uncoal = 40
             self.mem_trans_per_warp_coal = 1
-            self.mem_trans_per_warp_uncoal = 12
+            self.mem_trans_per_warp_uncoal = 5.7  #see technical report??
             self.SM_count = 30
             self.max_threads_per_SM = 1024
+            self.max_blocks_per_SM = 8
+        elif (gpu_name == 'FX5600'):
+            self.threads_per_warp = 32
+            self.issue_cycles = 4  #?
+            self.sm_clock_freq = 1.35
+            self.mem_bandwidth = 76.8
+            self.DRAM_access_latency = 420
+            self.departure_del_coal = 4
+            self.departure_del_uncoal = 10
+            self.mem_trans_per_warp_coal = 1
+            self.mem_trans_per_warp_uncoal = 32
+            self.SM_count = 16
+            self.max_threads_per_SM = 768
             self.max_blocks_per_SM = 8
         elif (gpu_name == 'HKexample'):
             self.threads_per_warp = 32
