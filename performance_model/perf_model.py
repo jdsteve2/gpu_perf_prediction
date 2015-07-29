@@ -60,7 +60,7 @@ class GPUStats(object):
             self.max_blocks_per_SM = 8
         elif (gpu_name == 'FX5600'):
             self.threads_per_warp = 32
-            self.issue_cycles = 4  #?
+            self.issue_cycles = 4
             self.sm_clock_freq = 1.35
             self.mem_bandwidth = 76.8
             self.DRAM_access_latency = 420
@@ -153,18 +153,19 @@ class PerfModel(object):
         # (how many blocks can run simultaneously on a SM)
         if active_blocks is None:
             self.active_blocks_per_SM = min(
-                GPU_stats.max_threads_per_SM/thread_config.threads_per_block,
+                float(GPU_stats.max_threads_per_SM)/thread_config.threads_per_block,
                 GPU_stats.max_blocks_per_SM)
         else:
             self.active_blocks_per_SM = active_blocks
 
-        print("DEBUGGING... self.active_blocks_per_SM: ", self.active_blocks_per_SM)
+        #print("DEBUGGING... self.active_blocks_per_SM: ", self.active_blocks_per_SM)
         self.active_SMs = min(
-                            thread_config.blocks/self.active_blocks_per_SM,
+                            float(thread_config.blocks)/self.active_blocks_per_SM,
                             GPU_stats.SM_count)
         #print("DEBUGGING... self.active_SMs: ",self.active_SMs)
         self.active_warps_per_SM = self.active_blocks_per_SM * \
-                    thread_config.threads_per_block/GPU_stats.threads_per_warp
+                                   float(thread_config.threads_per_block)/ \
+                                   GPU_stats.threads_per_warp
 
     def compute_exec_cycles(self):
 
@@ -172,10 +173,10 @@ class PerfModel(object):
                        self.GPU_stats.mem_trans_per_warp_uncoal - 1) * \
                        self.GPU_stats.departure_del_uncoal
         mem_l_coal = self.GPU_stats.DRAM_access_latency
-        weight_uncoal = self.kernel_stats.mem_instructions_uncoal/(
+        weight_uncoal = float(self.kernel_stats.mem_instructions_uncoal)/(
                         self.kernel_stats.mem_instructions_uncoal +
                         self.kernel_stats.mem_instructions_coal)
-        weight_coal = self.kernel_stats.mem_instructions_coal/(
+        weight_coal = float(self.kernel_stats.mem_instructions_coal)/(
                       self.kernel_stats.mem_instructions_coal +
                       self.kernel_stats.mem_instructions_uncoal)
         mem_l = mem_l_uncoal * weight_uncoal + mem_l_coal * weight_coal
@@ -190,23 +191,26 @@ class PerfModel(object):
         comp_cycles = self.GPU_stats.issue_cycles * \
                       self.kernel_stats.total_instructions
         n = self.active_warps_per_SM
-        rep = self.thread_config.blocks/(self.active_blocks_per_SM * self.active_SMs)
+        rep = float(self.thread_config.blocks)/(
+                    self.active_blocks_per_SM * self.active_SMs)
 
-        bw_per_warp = self.GPU_stats.sm_clock_freq*self.load_bytes_per_warp/mem_l
-        mwp_peak_bw = self.GPU_stats.mem_bandwidth/(bw_per_warp * self.active_SMs)
+        bw_per_warp = self.GPU_stats.sm_clock_freq * \
+                      float(self.load_bytes_per_warp)/mem_l
+        mwp_peak_bw = float(self.GPU_stats.mem_bandwidth)/(
+                      bw_per_warp * self.active_SMs)
         MWP = min(mwp_without_bw, mwp_peak_bw, n)
 
-        cwp_full = (mem_cycles + comp_cycles)/comp_cycles
+        cwp_full = float(mem_cycles + comp_cycles)/comp_cycles
         CWP = min(cwp_full, n)
 
         if (MWP == n) and (CWP == n):  # TODO correct?
             exec_cycles_app = (mem_cycles + comp_cycles +
-                               comp_cycles/self.kernel_stats.mem_instructions *
-                               (MWP-1))*rep
+                              float(comp_cycles)/self.kernel_stats.mem_instructions*
+                              (MWP-1))*rep
         elif (CWP >= MWP) or (comp_cycles > mem_cycles):
-            exec_cycles_app = (mem_cycles * n/MWP +
-                               comp_cycles/self.kernel_stats.mem_instructions *
-                               (MWP-1))*rep
+            exec_cycles_app = (mem_cycles * float(n)/MWP +
+                              float(comp_cycles)/self.kernel_stats.mem_instructions*
+                              (MWP-1))*rep
         else:  # (MWP > CWP)
             exec_cycles_app = (mem_l + comp_cycles * n) * rep
 
