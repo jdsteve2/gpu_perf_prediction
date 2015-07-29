@@ -59,16 +59,16 @@ class GPUStats(object):
             self.max_threads_per_SM = 1024
             self.max_blocks_per_SM = 8
         elif (gpu_name == 'FX5600'):
-            self.threads_per_warp = 32
-            self.issue_cycles = 4
-            self.sm_clock_freq = 1.35
-            self.mem_bandwidth = 76.8
-            self.DRAM_access_latency = 420
-            self.departure_del_coal = 4
-            self.departure_del_uncoal = 10
-            self.mem_trans_per_warp_coal = 1
-            self.mem_trans_per_warp_uncoal = 32
-            self.SM_count = 16
+            self.threads_per_warp = 32  # Table 1
+            self.issue_cycles = 4  # Table 1
+            self.sm_clock_freq = 1.35  # Table 3
+            self.mem_bandwidth = 76.8  # Table 3
+            self.DRAM_access_latency = 420  # Table 6
+            self.departure_del_coal = 4  # Table 6
+            self.departure_del_uncoal = 10  # Table 6
+            self.mem_trans_per_warp_coal = 1  # Table 3
+            self.mem_trans_per_warp_uncoal = 32  # Table 3
+            self.SM_count = 16  # Table 3
             self.max_threads_per_SM = 768
             self.max_blocks_per_SM = 8
         elif (gpu_name == 'HKexample'):
