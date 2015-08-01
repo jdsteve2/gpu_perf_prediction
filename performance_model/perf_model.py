@@ -38,11 +38,11 @@ class GPUStats(object):
     # issue_cycles:               number of cycles to execute one instruction
     # sm_clock_freq:              clock frequency of SMs (GHz), renamed from "Freq"
     # mem_bandwidth:              bandwidth between DRAM and GPU cores (GB/s)
-    # DRAM_access_latency:        DRAM access latency, renamed from Mem_LD (?cycles)
+    # roundtrip_DRAM_access_latency:        DRAM access latency, renamed from Mem_LD (?cycles)
     # departure_del_coal:         delay between two coalesced mem trans (?cycles)
     # departure_del_uncoal:       delay between two uncoalesced mem trans (?cycles)
-    # mem_trans_per_warp_coal:    number of coalsced mem transactions per warp coalesced
-    # mem_trans_per_warp_uncoal:  number of uncoalsced mem transactions per warp
+    # mem_trans_per_warp_coal:    number of coalsced mem trans per warp
+    # mem_trans_per_warp_uncoal:  number of uncoalsced mem trans per warp
 
     def __init__(self, gpu_name):
         if (gpu_name == 'GTX280'):
@@ -50,7 +50,7 @@ class GPUStats(object):
             self.issue_cycles = 4  #?
             self.sm_clock_freq = 1.3
             self.mem_bandwidth = 141.7
-            self.DRAM_access_latency = 450
+            self.roundtrip_DRAM_access_latency = 450
             self.departure_del_coal = 4
             self.departure_del_uncoal = 40
             self.mem_trans_per_warp_coal = 1
@@ -63,7 +63,7 @@ class GPUStats(object):
             self.issue_cycles = 4  # Table 1
             self.sm_clock_freq = 1.35  # Table 3
             self.mem_bandwidth = 76.8  # Table 3
-            self.DRAM_access_latency = 420  # Table 6
+            self.roundtrip_DRAM_access_latency = 420  # Table 6
             self.departure_del_coal = 4  # Table 6
             self.departure_del_uncoal = 10  # Table 6
             self.mem_trans_per_warp_coal = 1  # Table 3
@@ -76,7 +76,7 @@ class GPUStats(object):
             self.issue_cycles = 4
             self.sm_clock_freq = 1.0
             self.mem_bandwidth = 80
-            self.DRAM_access_latency = 420
+            self.roundtrip_DRAM_access_latency = 420
             self.departure_del_coal = 1
             self.departure_del_uncoal = 10
             self.mem_trans_per_warp_coal = 1
@@ -89,7 +89,7 @@ class GPUStats(object):
             self.issue_cycles = 4
             self.sm_clock_freq = 0.706
             self.mem_bandwidth = 208
-            self.DRAM_access_latency = 230  # 230 from Kumar, 2014  TODO correct?
+            self.roundtrip_DRAM_access_latency = 230  # 230 from Kumar, 2014  TODO correct?
             self.departure_del_coal = 1  # from Krishnamani, Clemson U, 2014, for K20
             # TODO Is this^ correct?
             self.departure_del_uncoal = 38
@@ -110,9 +110,9 @@ class KernelStats(object):
     # mem_instructions_uncoal:  # of uncoalesced memory instructions per thread
     # mem_instructions_coal:    number of coalesced memory instructions per thread
     # synch_instructions:       total dynamic # of synch instructions per thread
-    # mem_instructions:         mem_instructions_uncoal + mem_instructions_coal
+    # mem_insns_total:         mem_instructions_uncoal + mem_instructions_coal
                         #TODO paper does not explain this, make sure it's correct
-    # total_instructions:       comp_instructions + mem_instructions
+    # total_instructions:       comp_instructions + mem_insns_total
 
     def __init__(self, comp_instructions, mem_instructions_uncoal,
                         mem_instructions_coal, synch_instructions):
@@ -120,14 +120,14 @@ class KernelStats(object):
         self.mem_instructions_uncoal = mem_instructions_uncoal
         self.mem_instructions_coal = mem_instructions_coal
         self.synch_instructions = synch_instructions
-        self.mem_instructions = mem_instructions_uncoal + mem_instructions_coal
-        self.total_instructions = comp_instructions + self.mem_instructions
+        self.mem_insns_total = mem_instructions_uncoal + mem_instructions_coal
+        self.total_instructions = comp_instructions + self.mem_insns_total
 
     def __str__(self):
         return "\ncomp_insns: " + str(self.comp_instructions) + \
                "\nmem_insns_uncoal: " + str(self.mem_instructions_uncoal) + \
                "\nmem_insns_coal: " + str(self.mem_instructions_coal) + \
-               "\nmem_insns_total: " + str(self.mem_instructions) + \
+               "\nmem_insns_total: " + str(self.mem_insns_total) + \
                "\nsynch_insns: " + str(self.synch_instructions) + \
                "\ntotal_insns: " + str(self.total_instructions)
 
@@ -147,49 +147,73 @@ class PerfModel(object):
         self.thread_config = thread_config
         data_size = dtype.itemsize
 
+        # Calculate number of bytes loaded by full warp
         self.load_bytes_per_warp = GPU_stats.threads_per_warp * data_size
 
+        # Determine # of blocks that can run simultaneously on one SM
         #TODO calculate this correctly figuring in register/shared mem usage
-        # (how many blocks can run simultaneously on a SM)
         if active_blocks is None:
             self.active_blocks_per_SM = min(
                 float(GPU_stats.max_threads_per_SM)/thread_config.threads_per_block,
                 GPU_stats.max_blocks_per_SM)
         else:
             self.active_blocks_per_SM = active_blocks
-
         #print("DEBUGGING... self.active_blocks_per_SM: ", self.active_blocks_per_SM)
+
+        # Determine number of active SMs
+        # active_SMs == SM_count, unless we have a very small number of blocks
         self.active_SMs = min(
                             float(thread_config.blocks)/self.active_blocks_per_SM,
                             GPU_stats.SM_count)
-        #print("DEBUGGING... self.active_SMs: ",self.active_SMs)
+
+        # Calculate number of active warps per SM
         self.active_warps_per_SM = self.active_blocks_per_SM * \
                                    float(thread_config.threads_per_block)/ \
                                    GPU_stats.threads_per_warp
 
     def compute_exec_cycles(self):
 
-        mem_l_uncoal = self.GPU_stats.DRAM_access_latency + (
+        # time (cycles) per warp spent on uncoalesced mem transactions
+        mem_l_uncoal = self.GPU_stats.roundtrip_DRAM_access_latency + (
                        self.GPU_stats.mem_trans_per_warp_uncoal - 1) * \
                        self.GPU_stats.departure_del_uncoal
-        mem_l_coal = self.GPU_stats.DRAM_access_latency
+
+        # time (cycles) per warp spent on coalesced mem transactions
+        mem_l_coal = self.GPU_stats.roundtrip_DRAM_access_latency
+
+        # percent of mem transactions that are uncoalesced
         weight_uncoal = float(self.kernel_stats.mem_instructions_uncoal)/(
-                        self.kernel_stats.mem_instructions_uncoal +
-                        self.kernel_stats.mem_instructions_coal)
+                        self.kernel_stats.mem_insns_total)
+
+        # percent of mem transactions that are coalesced
         weight_coal = float(self.kernel_stats.mem_instructions_coal)/(
-                      self.kernel_stats.mem_instructions_coal +
-                      self.kernel_stats.mem_instructions_uncoal)
+                        self.kernel_stats.mem_insns_total)
+
+        # weighted average of mem latency (cycles) per warp
         mem_l = mem_l_uncoal * weight_uncoal + mem_l_coal * weight_coal
+
+        # "minimum departure distance between two consecutive memory warps" -HK
+        # (cycles)
         departure_delay = self.GPU_stats.departure_del_uncoal * \
                           self.GPU_stats.mem_trans_per_warp_uncoal * \
                           weight_uncoal + self.GPU_stats.departure_del_coal * \
                           weight_coal
+
+        # "If the number of active warps is less than MWP_Without_BW_full,
+        # the processor does not have enough number of warps to utilize 
+        # memory level parallelism"
         mwp_without_bw_full = mem_l/departure_delay
         mwp_without_bw = min(mwp_without_bw_full, self.active_warps_per_SM)
+
+        # memory cycles per warp
         mem_cycles = mem_l_uncoal * self.kernel_stats.mem_instructions_uncoal  \
                     + mem_l_coal * self.kernel_stats.mem_instructions_coal
+
+        # computation cycles per warp
         comp_cycles = self.GPU_stats.issue_cycles * \
                       self.kernel_stats.total_instructions
+
+        # active warps per SM TODO: forget n
         n = self.active_warps_per_SM
         rep = float(self.thread_config.blocks)/(
                     self.active_blocks_per_SM * self.active_SMs)
@@ -198,6 +222,9 @@ class PerfModel(object):
                       float(self.load_bytes_per_warp)/mem_l
         mwp_peak_bw = float(self.GPU_stats.mem_bandwidth)/(
                       bw_per_warp * self.active_SMs)
+
+        # Memory Warp Parallelism (MWP)
+        # MWP: # of memory warps per SM that can be handled during mem_L cycles
         MWP = min(mwp_without_bw, mwp_peak_bw, n)
 
         cwp_full = float(mem_cycles + comp_cycles)/comp_cycles
@@ -205,11 +232,11 @@ class PerfModel(object):
 
         if (MWP == n) and (CWP == n):  # TODO correct?
             exec_cycles_app = (mem_cycles + comp_cycles +
-                              float(comp_cycles)/self.kernel_stats.mem_instructions*
+                              float(comp_cycles)/self.kernel_stats.mem_insns_total*
                               (MWP-1))*rep
         elif (CWP >= MWP) or (comp_cycles > mem_cycles):
             exec_cycles_app = (mem_cycles * float(n)/MWP +
-                              float(comp_cycles)/self.kernel_stats.mem_instructions*
+                              float(comp_cycles)/self.kernel_stats.mem_insns_total*
                               (MWP-1))*rep
         else:  # (MWP > CWP)
             exec_cycles_app = (mem_l + comp_cycles * n) * rep
