@@ -171,7 +171,7 @@ class PerfModel(object):
                                    float(thread_config.threads_per_block)/ \
                                    GPU_stats.threads_per_warp
 
-    def compute_exec_cycles(self):
+    def compute_total_cycles(self):
 
         # time (cycles) per warp spent on uncoalesced mem transactions
         mem_l_uncoal = self.GPU_stats.roundtrip_DRAM_access_latency + (
@@ -203,6 +203,7 @@ class PerfModel(object):
         # the processor does not have enough number of warps to utilize 
         # memory level parallelism"
         mwp_without_bw_full = mem_l/departure_delay
+        #mwp_without_bw_full = round(mwp_without_bw_full, 2)
         mwp_without_bw = min(mwp_without_bw_full, self.active_warps_per_SM)
 
         # memory cycles per warp
@@ -215,35 +216,87 @@ class PerfModel(object):
 
         # active warps per SM TODO: forget n
         n = self.active_warps_per_SM
-        rep = float(self.thread_config.blocks)/(
+
+        # how many times does an SM execute active_blocks_per_SM blocks?
+        reps_per_SM = float(self.thread_config.blocks)/(
                     self.active_blocks_per_SM * self.active_SMs)
 
+        # bandwidth per warp (GB/second)
         bw_per_warp = self.GPU_stats.sm_clock_freq * \
                       float(self.load_bytes_per_warp)/mem_l
+        #bw_per_warp = round(bw_per_warp, 3)
+
+        # max memory warp parallelism (warps/SM) based on peak mem bandwidth
         mwp_peak_bw = float(self.GPU_stats.mem_bandwidth)/(
                       bw_per_warp * self.active_SMs)
+        #mwp_peak_bw = round(mwp_peak_bw, 2)
 
         # Memory Warp Parallelism (MWP)
         # MWP: # of memory warps per SM that can be handled during mem_L cycles
-        MWP = min(mwp_without_bw, mwp_peak_bw, n)
+        # MWP is minimum of three quantities:
+        #  mwp_peak_bw: maximum number of warps based on peak mem bandwidth
+        #  mwp_without_bw: if peak bw not reached, MWP is function of mem_l and departure_delay
+        #  n: maximum number of active warps per SM based on machine resources like register usage, shared memory usage, etc.
+        self.MWP = min(mwp_without_bw, mwp_peak_bw, n)  #TODO n already incorporated above
+        #self.MWP = round(self.MWP, 2)
 
+        # total cycles (per warp) / computation cycles (per warp)  
+        # = max computation warp parallelism
         cwp_full = float(mem_cycles + comp_cycles)/comp_cycles
-        CWP = min(cwp_full, n)
+        #cwp_full = round(cwp_full, 2)
 
-        if (MWP == n) and (CWP == n):  # TODO correct?
+        # CWP cannot be greater than the max number of active warps per SM
+        self.CWP = min(cwp_full, n)
+
+        if (self.MWP == n) and (self.CWP == n):
             exec_cycles_app = (mem_cycles + comp_cycles +
                               float(comp_cycles)/self.kernel_stats.mem_insns_total*
-                              (MWP-1))*rep
-        elif (CWP >= MWP) or (comp_cycles > mem_cycles):
-            exec_cycles_app = (mem_cycles * float(n)/MWP +
+                              (self.MWP-1))*reps_per_SM
+        elif (self.CWP >= self.MWP) or (comp_cycles > mem_cycles):
+            exec_cycles_app = (mem_cycles * float(n)/self.MWP +
                               float(comp_cycles)/self.kernel_stats.mem_insns_total*
-                              (MWP-1))*rep
-        else:  # (MWP > CWP)
-            exec_cycles_app = (mem_l + comp_cycles * n) * rep
+                              (self.MWP-1))*reps_per_SM
+        else:  # (self.MWP > self.CWP)
+            exec_cycles_app = (mem_l + comp_cycles * n)*reps_per_SM
 
-        synch_cost = departure_delay * (MWP-1) *  \
+        # compute cost of synchronization instructions
+        synch_cost = departure_delay * (self.MWP-1) *  \
                      self.kernel_stats.synch_instructions * \
-                     self.active_blocks_per_SM*rep
+                     self.active_blocks_per_SM*reps_per_SM
+
+        # compute CPI (cycles per instruction) just to see what it is
+        self.CPI = exec_cycles_app/(self.kernel_stats.total_instructions*(self.thread_config.threads_per_block/self.GPU_stats.threads_per_warp)*(self.thread_config.blocks/self.active_SMs))
+        self.occ = n*self.GPU_stats.threads_per_warp/self.GPU_stats.max_threads_per_SM
+        '''
+        print "<debugging> mem_ld: ", self.GPU_stats.roundtrip_DRAM_access_latency
+        print "<debugging> departure_del_uncoal: ", self.GPU_stats.departure_del_uncoal
+        print "<debugging> threads_per_block: ", self.thread_config.threads_per_block
+        print "<debugging> blocks: ", self.thread_config.blocks
+        print "<debugging> active_blocks_per_sm: ", self.active_blocks_per_SM
+        print "<debugging> active_sms: ", self.active_SMs
+        print "<debugging> active_warps_per_sm: ", self.active_warps_per_SM
+        print "<debugging> comp_insts: ", self.kernel_stats.comp_instructions
+        print "<debugging> uncoal_mem_insts: ", self.kernel_stats.mem_instructions_uncoal
+        print "<debugging> coal_mem_insts: ", self.kernel_stats.mem_instructions_coal
+        print "<debugging> synch_insts: ", self.kernel_stats.synch_instructions
+        print "<debugging> mem_trans_per_warp_coal: ", self.GPU_stats.mem_trans_per_warp_coal
+        print "<debugging> mem_trans_per_warp_uncoal: ", self.GPU_stats.mem_trans_per_warp_uncoal
+        print "<debugging> load_bytes_per_warp: ", self.load_bytes_per_warp
+        print "<debugging> departure_delay: ", departure_delay
+        print "<debugging> mem_l: ", mem_l
+        print "<debugging> mwp_without_bw_full: ", mwp_without_bw_full
+        print "<debugging> bw_per_warp: ", bw_per_warp
+        print "<debugging> mwp_peak_bw: ", mwp_peak_bw
+        print "<debugging> MWP: ", self.MWP
+        print "<debugging> comp_cycles: ", comp_cycles
+        print "<debugging> mem_cycles: ", mem_cycles
+        print "<debugging> CWP_full: ", cwp_full
+        print "<debugging> CWP: ", self.CWP
+        print "<debugging> rep: ", reps_per_SM
+        print "<debugging> exec_cycles_app: ", exec_cycles_app
+        print "<debugging> synch_cost: ", synch_cost
+        print "<debugging> CPI: ", CPI
+        '''
         return exec_cycles_app+synch_cost
 
 

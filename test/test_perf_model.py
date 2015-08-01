@@ -16,7 +16,8 @@ def test_HK_example():
     tconfig = ThreadConfig(128, 80)
     model = PerfModel(gstats, kstats, tconfig, np.dtype(np.float32), active_blocks=5)
     expected = 50738
-    assert (abs(model.compute_exec_cycles() - expected) / expected) < TOLERANCE
+    print "total cycles: ", model.compute_total_cycles()
+    assert (abs(model.compute_total_cycles() - expected) / expected) < TOLERANCE
 
 def test_HK_sepia():
 
@@ -29,13 +30,20 @@ def test_HK_sepia():
     trials = 17
     threads = [(x+6)*(x+6) for x in range(trials)]
     active_blocks = [8, 8, 8, 8, 6, 6, 4, 4, 3, 3, 3, 2, 2, 2, 1, 1, 1]
+    #active_blocks = [8, 8, 8, 8, 8, 6, 6, 4, 4, 3, 3, 3, 2, 2, 1, 1, 1]
     times = []
     for i in range(trials):
         tconfig = ThreadConfig(threads[i], n*n/threads[i])
         model = PerfModel(gstats, kstats, tconfig,
                         np.dtype(np.float32), active_blocks=active_blocks[i])
-        times.append(model.compute_exec_cycles()/(gstats.sm_clock_freq*(10**9))*(10**3))
+        times.append(model.compute_total_cycles()/(gstats.sm_clock_freq*(10**9))*(10**3))
+        '''
+        model.compute_total_cycles()
+        times.append(model.occ)
+        '''
         print threads[i], active_blocks[i], times[i]
+
+    #print "avg occ: ", np.average(times)
 
     '''
     plt.figure("sepia")
@@ -57,13 +65,20 @@ def test_HK_linear():
     trials = 9
     threads = [(x*2+6)*(x*2+6) for x in range(trials)]
     active_blocks = [8, 8, 4, 2, 2, 2, 1, 1, 1]
+    #active_blocks = [8, 8, 4, 4, 2, 2, 2, 1, 1]
     times = []
     for i in range(trials):
         tconfig = ThreadConfig(threads[i], n*n/threads[i])
         model = PerfModel(gstats, kstats, tconfig,
                         np.dtype(np.float32), active_blocks=active_blocks[i])
-        times.append(model.compute_exec_cycles()/(gstats.sm_clock_freq*(10**9))*(10**3))
+        times.append(model.compute_total_cycles()/(gstats.sm_clock_freq*(10**9))*(10**3))
+        '''
+        model.compute_total_cycles()
+        times.append(model.occ)
+        '''
         print threads[i], active_blocks[i], times[i]
+
+    #print "avg occ: ", np.average(times)
     '''
     plt.figure("linear")
     plt.title("linear")
@@ -73,7 +88,7 @@ def test_HK_linear():
     plt.show()
     '''
     assert 1 == 0
-    #assert (abs(model.compute_exec_cycles() - expected) / expected) < TOLERANCE
+    #assert (abs(model.compute_total_cycles() - expected) / expected) < TOLERANCE
 
 def test_HK_blackscholes():
     # input size: 9000000
@@ -85,14 +100,20 @@ def test_HK_blackscholes():
     trials = 9
     threads = [(x*2+6)*(x*2+6) for x in range(trials)]
     active_blocks = [8, 8, 5, 3, 2, 2, 1, 1, 1]
+    #active_blocks = [8, 8, 8, 5, 3, 3, 2, 1, 1]
     times = []
     for i in range(trials):
         tconfig = ThreadConfig(threads[i], n/threads[i])
         model = PerfModel(gstats, kstats, tconfig,
                         np.dtype(np.float32), active_blocks=active_blocks[i])
-        times.append(model.compute_exec_cycles()/(gstats.sm_clock_freq*(10**9))*(10**3))
+        times.append(model.compute_total_cycles()/(gstats.sm_clock_freq*(10**9))*(10**3))
+        '''
+        model.compute_total_cycles()
+        times.append(model.occ)
+        '''
         print threads[i], active_blocks[i], times[i]
 
+    #print "avg occ: ", np.average(times)
     '''
     plt.figure("blackscholes")
     plt.title("blackscholes")
@@ -102,7 +123,7 @@ def test_HK_blackscholes():
     plt.show()
     '''
     assert 1 == 0
-    #assert (abs(model.compute_exec_cycles() - expected) / expected) < TOLERANCE
+    #assert (abs(model.compute_total_cycles() - expected) / expected) < TOLERANCE
 
 def test_HK_SVM():
     # input size: 736*992
@@ -115,13 +136,20 @@ def test_HK_SVM():
     trials = 17
     threads = [(x+6)*(x+6) for x in range(trials)]
     active_blocks = [8, 8, 8, 6, 6, 6, 4, 4, 3, 3, 3, 2, 2, 2, 1, 1, 1]
+    #active_blocks = [8, 8, 8, 8, 6, 6, 6, 4, 4, 3, 3, 3, 2, 2, 2, 1, 1]
     times = []
     for i in range(trials):
         tconfig = ThreadConfig(threads[i], (n1*n2)/threads[i])
         model = PerfModel(gstats, kstats, tconfig,
                         np.dtype(np.float32), active_blocks=active_blocks[i])
-        times.append(model.compute_exec_cycles()/(gstats.sm_clock_freq*(10**9))*(10**3))
+        times.append(model.compute_total_cycles()/(gstats.sm_clock_freq*(10**9))*(10**3))
+        '''
+        model.compute_total_cycles()
+        times.append(model.occ)
+        '''
         print threads[i], active_blocks[i], times[i]
+
+    #print "avg occ: ", np.average(times)
     '''
     plt.figure("svm")
     plt.title("svm")
@@ -131,7 +159,7 @@ def test_HK_SVM():
     plt.show()
     '''
     assert 1 == 0
-    #assert (abs(model.compute_exec_cycles() - expected) / expected) < TOLERANCE
+    #assert (abs(model.compute_total_cycles() - expected) / expected) < TOLERANCE
 
 
 if __name__ == "__main__":
