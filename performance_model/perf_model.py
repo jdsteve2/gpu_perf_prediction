@@ -31,6 +31,7 @@ THE SOFTWARE.
 
 # parameters from Table 1 in Hong Kim paper
 
+import math
 
 class GPUStats(object):
 
@@ -153,8 +154,10 @@ class PerfModel(object):
         # Determine # of blocks that can run simultaneously on one SM
         #TODO calculate this correctly figuring in register/shared mem usage
         if active_blocks is None:
+            print "<debugging> active_blocks was None, estimating..."
             self.active_blocks_per_SM = min(
-                float(GPU_stats.max_threads_per_SM)/thread_config.threads_per_block,
+                math.floor(GPU_stats.max_threads_per_SM/
+                thread_config.threads_per_block),
                 GPU_stats.max_blocks_per_SM)
         else:
             self.active_blocks_per_SM = active_blocks
@@ -163,13 +166,13 @@ class PerfModel(object):
         # Determine number of active SMs
         # active_SMs == SM_count, unless we have a very small number of blocks
         self.active_SMs = min(
-                            float(thread_config.blocks)/self.active_blocks_per_SM,
+                            thread_config.blocks/self.active_blocks_per_SM,
                             GPU_stats.SM_count)
 
         # Calculate number of active warps per SM
         self.active_warps_per_SM = self.active_blocks_per_SM * \
-                                   float(thread_config.threads_per_block)/ \
-                                   GPU_stats.threads_per_warp
+                                   math.ceil(thread_config.threads_per_block/ \
+                                   GPU_stats.threads_per_warp)
 
     def compute_total_cycles(self):
 
@@ -182,11 +185,11 @@ class PerfModel(object):
         mem_l_coal = self.GPU_stats.roundtrip_DRAM_access_latency
 
         # percent of mem transactions that are uncoalesced
-        weight_uncoal = float(self.kernel_stats.mem_instructions_uncoal)/(
+        weight_uncoal = self.kernel_stats.mem_instructions_uncoal/(
                         self.kernel_stats.mem_insns_total)
 
         # percent of mem transactions that are coalesced
-        weight_coal = float(self.kernel_stats.mem_instructions_coal)/(
+        weight_coal = self.kernel_stats.mem_instructions_coal/(
                         self.kernel_stats.mem_insns_total)
 
         # weighted average of mem latency (cycles) per warp
@@ -218,16 +221,16 @@ class PerfModel(object):
         n = self.active_warps_per_SM
 
         # how many times does an SM execute active_blocks_per_SM blocks?
-        reps_per_SM = float(self.thread_config.blocks)/(
+        reps_per_SM = self.thread_config.blocks/(
                     self.active_blocks_per_SM * self.active_SMs)
 
         # bandwidth per warp (GB/second)
         bw_per_warp = self.GPU_stats.sm_clock_freq * \
-                      float(self.load_bytes_per_warp)/mem_l
+                      self.load_bytes_per_warp/mem_l
         #bw_per_warp = round(bw_per_warp, 3)
 
         # max memory warp parallelism (warps/SM) based on peak mem bandwidth
-        mwp_peak_bw = float(self.GPU_stats.mem_bandwidth)/(
+        mwp_peak_bw = self.GPU_stats.mem_bandwidth/(
                       bw_per_warp * self.active_SMs)
         #mwp_peak_bw = round(mwp_peak_bw, 2)
 
@@ -242,7 +245,7 @@ class PerfModel(object):
 
         # total cycles (per warp) / computation cycles (per warp)  
         # = max computation warp parallelism
-        cwp_full = float(mem_cycles + comp_cycles)/comp_cycles
+        cwp_full = (mem_cycles + comp_cycles)/comp_cycles
         #cwp_full = round(cwp_full, 2)
 
         # CWP cannot be greater than the max number of active warps per SM
@@ -250,12 +253,13 @@ class PerfModel(object):
 
         if (self.MWP == n) and (self.CWP == n):
             exec_cycles_app = (mem_cycles + comp_cycles +
-                              float(comp_cycles)/self.kernel_stats.mem_insns_total*
+                              comp_cycles/self.kernel_stats.mem_insns_total*
                               (self.MWP-1))*reps_per_SM
         elif (self.CWP >= self.MWP) or (comp_cycles > mem_cycles):
-            exec_cycles_app = (mem_cycles * float(n)/self.MWP +
-                              float(comp_cycles)/self.kernel_stats.mem_insns_total*
+            exec_cycles_app = (mem_cycles * n/self.MWP +
+                              comp_cycles/self.kernel_stats.mem_insns_total*
                               (self.MWP-1))*reps_per_SM
+            #print "<debugging> ", mem_cycles, n, self.MWP, comp_cycles, self.kernel_stats.mem_insns_total, self.MWP, reps_per_SM
         else:  # (self.MWP > self.CWP)
             exec_cycles_app = (mem_l + comp_cycles * n)*reps_per_SM
 
@@ -295,7 +299,7 @@ class PerfModel(object):
         print "<debugging> rep: ", reps_per_SM
         print "<debugging> exec_cycles_app: ", exec_cycles_app
         print "<debugging> synch_cost: ", synch_cost
-        print "<debugging> CPI: ", CPI
+        print "<debugging> CPI: ", self.CPI
         '''
         return exec_cycles_app+synch_cost
 
