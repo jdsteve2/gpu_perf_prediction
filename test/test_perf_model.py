@@ -26,6 +26,7 @@ def test_HK_example():
     print "MWP: ", model.MWP, "expected: ~", expect_mwp
     assert (abs(model.compute_total_cycles() - expected) / expected) < TOLERANCE
 
+
 def test_HK_sepia():
 
     print "TESTING sepia..."
@@ -33,7 +34,7 @@ def test_HK_sepia():
     # input size: 7000x7000
     n = 7000
     gstats = GPUStats('FX5600')
-    kstats = KernelStats(71, 6, 0, 0) #TODO synch_insns=0 ?
+    kstats = KernelStats(71, 6, 0, 0)  # TODO synch_insns=0 ?
     expected = 153
 
     trials = 17
@@ -49,7 +50,8 @@ def test_HK_sepia():
         tconfig = ThreadConfig(threads[i], n*n/threads[i])
         model = PerfModel(gstats, kstats, tconfig,
                         np.dtype(np.float32), active_blocks=active_blocks[i])
-        times.append(model.compute_total_cycles()/(gstats.sm_clock_freq*(10**9))*(10**3))
+        times.append(model.compute_total_cycles() /
+                    (gstats.sm_clock_freq*(10**9))*(10**3))
         occupancies.append(model.occ)
         CPIs.append(model.CPI)
         CWPs.append(model.CWP)
@@ -76,6 +78,7 @@ def test_HK_sepia():
     '''
     #assert 1 == 0
 
+
 def test_HK_linear():
 
     print "TESTING linear..."
@@ -83,7 +86,7 @@ def test_HK_linear():
     # input size: 10000x10000
     n = 10000
     gstats = GPUStats('FX5600')
-    kstats = KernelStats(111, 30, 0, 0) #TODO synch_insns=0 ?
+    kstats = KernelStats(111, 30, 0, 0)  # TODO synch_insns=0 ?
     expected = 775
 
     trials = 9
@@ -99,7 +102,8 @@ def test_HK_linear():
         tconfig = ThreadConfig(threads[i], n*n/threads[i])
         model = PerfModel(gstats, kstats, tconfig,
                         np.dtype(np.float32), active_blocks=active_blocks[i])
-        times.append(model.compute_total_cycles()/(gstats.sm_clock_freq*(10**9))*(10**3))
+        times.append(model.compute_total_cycles() /
+                    (gstats.sm_clock_freq*(10**9))*(10**3))
         occupancies.append(model.occ)
         CPIs.append(model.CPI)
         CWPs.append(model.CWP)
@@ -126,6 +130,7 @@ def test_HK_linear():
     #assert 1 == 0
     #assert (abs(model.compute_total_cycles() - expected) / expected) < TOLERANCE
 
+
 def test_HK_blackscholes():
 
     print "TESTING blackscholes..."
@@ -133,7 +138,7 @@ def test_HK_blackscholes():
     # input size: 9000000
     n = 9000000
     gstats = GPUStats('FX5600')
-    kstats = KernelStats(137, 7, 0, 0) #TODO synch_insns=0 ?
+    kstats = KernelStats(137, 7, 0, 0)  # TODO synch_insns=0 ?
     expected = 34
 
     trials = 9
@@ -149,7 +154,8 @@ def test_HK_blackscholes():
         tconfig = ThreadConfig(threads[i], n/threads[i])
         model = PerfModel(gstats, kstats, tconfig,
                         np.dtype(np.float32), active_blocks=active_blocks[i])
-        times.append(model.compute_total_cycles()/(gstats.sm_clock_freq*(10**9))*(10**3))
+        times.append(model.compute_total_cycles() /
+                    (gstats.sm_clock_freq*(10**9))*(10**3))
         occupancies.append(model.occ)
         CPIs.append(model.CPI)
         CWPs.append(model.CWP)
@@ -176,6 +182,7 @@ def test_HK_blackscholes():
     #assert 1 == 0
     #assert (abs(model.compute_total_cycles() - expected) / expected) < TOLERANCE
 
+
 def test_HK_SVM():
 
     print "TESTING SVM..."
@@ -184,7 +191,7 @@ def test_HK_SVM():
     n1 = 736
     n2 = 992
     gstats = GPUStats('FX5600')
-    kstats = KernelStats(10871, 0, 819, 0) #TODO synch_insns=0 ?
+    kstats = KernelStats(10871, 0, 819, 0)  # TODO synch_insns=0 ?
     expected = 14
 
     trials = 17
@@ -200,7 +207,8 @@ def test_HK_SVM():
         tconfig = ThreadConfig(threads[i], (n1*n2)/threads[i])
         model = PerfModel(gstats, kstats, tconfig,
                         np.dtype(np.float32), active_blocks=active_blocks[i])
-        times.append(model.compute_total_cycles()/(gstats.sm_clock_freq*(10**9))*(10**3))
+        times.append(model.compute_total_cycles() /
+                    (gstats.sm_clock_freq*(10**9))*(10**3))
         occupancies.append(model.occ)
         CPIs.append(model.CPI)
         CWPs.append(model.CWP)

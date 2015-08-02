@@ -33,13 +33,14 @@ THE SOFTWARE.
 
 import math
 
+
 class GPUStats(object):
 
     # threads_per_warp:           number of threads per warp
     # issue_cycles:               number of cycles to execute one instruction
     # sm_clock_freq:              clock frequency of SMs (GHz), renamed from "Freq"
     # mem_bandwidth:              bandwidth between DRAM and GPU cores (GB/s)
-    # roundtrip_DRAM_access_latency:        DRAM access latency, renamed from Mem_LD (?cycles)
+    # roundtrip_DRAM_access_latency: DRAM access latency (Mem_LD) (?cycles)
     # departure_del_coal:         delay between two coalesced mem trans (?cycles)
     # departure_del_uncoal:       delay between two uncoalesced mem trans (?cycles)
     # mem_trans_per_warp_coal:    number of coalsced mem trans per warp
@@ -48,14 +49,14 @@ class GPUStats(object):
     def __init__(self, gpu_name):
         if (gpu_name == 'GTX280'):
             self.threads_per_warp = 32
-            self.issue_cycles = 4  #?
+            self.issue_cycles = 4  # ?
             self.sm_clock_freq = 1.3
             self.mem_bandwidth = 141.7
             self.roundtrip_DRAM_access_latency = 450
             self.departure_del_coal = 4
             self.departure_del_uncoal = 40
             self.mem_trans_per_warp_coal = 1
-            self.mem_trans_per_warp_uncoal = 5.7  #see technical report??
+            self.mem_trans_per_warp_uncoal = 5.7  # see technical report??
             self.SM_count = 30
             self.max_threads_per_SM = 1024
             self.max_blocks_per_SM = 8
@@ -90,7 +91,10 @@ class GPUStats(object):
             self.issue_cycles = 4
             self.sm_clock_freq = 0.706
             self.mem_bandwidth = 208
-            self.roundtrip_DRAM_access_latency = 230  # 230 from Kumar, 2014  TODO correct?
+
+            #TODO correct this:
+            self.roundtrip_DRAM_access_latency = 230  # 230 from Kumar, 2014
+
             self.departure_del_coal = 1  # from Krishnamani, Clemson U, 2014, for K20
             # TODO Is this^ correct?
             self.departure_del_uncoal = 38
@@ -156,7 +160,7 @@ class PerfModel(object):
         if active_blocks is None:
             print "<debugging> active_blocks was None, estimating..."
             self.active_blocks_per_SM = min(
-                math.floor(GPU_stats.max_threads_per_SM/
+                math.floor(GPU_stats.max_threads_per_SM /
                 thread_config.threads_per_block),
                 GPU_stats.max_blocks_per_SM)
         else:
@@ -170,9 +174,9 @@ class PerfModel(object):
                             GPU_stats.SM_count)
 
         # Calculate number of active warps per SM
-        self.active_warps_per_SM = self.active_blocks_per_SM * \
-                                   math.ceil(thread_config.threads_per_block/ \
-                                   GPU_stats.threads_per_warp)
+        self.active_warps_per_SM = self.active_blocks_per_SM*math.ceil(
+                                    thread_config.threads_per_block /
+                                    GPU_stats.threads_per_warp)
 
     def compute_total_cycles(self):
 
@@ -203,7 +207,7 @@ class PerfModel(object):
                           weight_coal
 
         # "If the number of active warps is less than MWP_Without_BW_full,
-        # the processor does not have enough number of warps to utilize 
+        # the processor does not have enough number of warps to utilize
         # memory level parallelism"
         mwp_without_bw_full = mem_l/departure_delay
         #mwp_without_bw_full = round(mwp_without_bw_full, 2)
@@ -238,12 +242,15 @@ class PerfModel(object):
         # MWP: # of memory warps per SM that can be handled during mem_L cycles
         # MWP is minimum of three quantities:
         #  mwp_peak_bw: maximum number of warps based on peak mem bandwidth
-        #  mwp_without_bw: if peak bw not reached, MWP is function of mem_l and departure_delay
-        #  n: maximum number of active warps per SM based on machine resources like register usage, shared memory usage, etc.
-        self.MWP = min(mwp_without_bw, mwp_peak_bw, n)  #TODO n already incorporated above
+        #  mwp_without_bw: if peak bw not reached,
+        #                  MWP is function of mem_l and departure_delay
+        #  n: maximum number of active warps per SM based on machine resources
+        #     like register usage, shared memory usage, etc.
+        self.MWP = min(mwp_without_bw, mwp_peak_bw, n)
+        # TODO n already incorporated above
         #self.MWP = round(self.MWP, 2)
 
-        # total cycles (per warp) / computation cycles (per warp)  
+        # total cycles (per warp) / computation cycles (per warp)
         # = max computation warp parallelism
         cwp_full = (mem_cycles + comp_cycles)/comp_cycles
         #cwp_full = round(cwp_full, 2)
@@ -253,13 +260,15 @@ class PerfModel(object):
 
         if (self.MWP == n) and (self.CWP == n):
             exec_cycles_app = (mem_cycles + comp_cycles +
-                              comp_cycles/self.kernel_stats.mem_insns_total*
+                              comp_cycles/self.kernel_stats.mem_insns_total *
                               (self.MWP-1))*reps_per_SM
         elif (self.CWP >= self.MWP) or (comp_cycles > mem_cycles):
             exec_cycles_app = (mem_cycles * n/self.MWP +
-                              comp_cycles/self.kernel_stats.mem_insns_total*
+                              comp_cycles/self.kernel_stats.mem_insns_total *
                               (self.MWP-1))*reps_per_SM
-            #print "<debugging> ", mem_cycles, n, self.MWP, comp_cycles, self.kernel_stats.mem_insns_total, self.MWP, reps_per_SM
+            #print "<debugging> ", mem_cycles, n, self.MWP
+            #print "<debugging> ", comp_cycles, self.kernel_stats.mem_insns_total,
+            #print "<debugging> ", self.MWP, reps_per_SM
         else:  # (self.MWP > self.CWP)
             exec_cycles_app = (mem_l + comp_cycles * n)*reps_per_SM
 
@@ -269,37 +278,41 @@ class PerfModel(object):
                      self.active_blocks_per_SM*reps_per_SM
 
         # compute CPI (cycles per instruction) just to see what it is
-        self.CPI = exec_cycles_app/(self.kernel_stats.total_instructions*(self.thread_config.threads_per_block/self.GPU_stats.threads_per_warp)*(self.thread_config.blocks/self.active_SMs))
-        self.occ = n*self.GPU_stats.threads_per_warp/self.GPU_stats.max_threads_per_SM
+        self.CPI = exec_cycles_app/(self.kernel_stats.total_instructions *
+                   (self.thread_config.threads_per_block /
+                    self.GPU_stats.threads_per_warp) *
+                   (self.thread_config.blocks/self.active_SMs))
+        self.occ = n*(self.GPU_stats.threads_per_warp /
+                      self.GPU_stats.max_threads_per_SM)
         '''
-        print "<debugging> mem_ld: ", self.GPU_stats.roundtrip_DRAM_access_latency
-        print "<debugging> departure_del_uncoal: ", self.GPU_stats.departure_del_uncoal
-        print "<debugging> threads_per_block: ", self.thread_config.threads_per_block
-        print "<debugging> blocks: ", self.thread_config.blocks
-        print "<debugging> active_blocks_per_sm: ", self.active_blocks_per_SM
-        print "<debugging> active_sms: ", self.active_SMs
-        print "<debugging> active_warps_per_sm: ", self.active_warps_per_SM
-        print "<debugging> comp_insts: ", self.kernel_stats.comp_instructions
-        print "<debugging> uncoal_mem_insts: ", self.kernel_stats.mem_instructions_uncoal
-        print "<debugging> coal_mem_insts: ", self.kernel_stats.mem_instructions_coal
-        print "<debugging> synch_insts: ", self.kernel_stats.synch_instructions
-        print "<debugging> mem_trans_per_warp_coal: ", self.GPU_stats.mem_trans_per_warp_coal
-        print "<debugging> mem_trans_per_warp_uncoal: ", self.GPU_stats.mem_trans_per_warp_uncoal
-        print "<debugging> load_bytes_per_warp: ", self.load_bytes_per_warp
-        print "<debugging> departure_delay: ", departure_delay
-        print "<debugging> mem_l: ", mem_l
-        print "<debugging> mwp_without_bw_full: ", mwp_without_bw_full
-        print "<debugging> bw_per_warp: ", bw_per_warp
-        print "<debugging> mwp_peak_bw: ", mwp_peak_bw
-        print "<debugging> MWP: ", self.MWP
-        print "<debugging> comp_cycles: ", comp_cycles
-        print "<debugging> mem_cycles: ", mem_cycles
-        print "<debugging> CWP_full: ", cwp_full
-        print "<debugging> CWP: ", self.CWP
-        print "<debugging> rep: ", reps_per_SM
-        print "<debugging> exec_cycles_app: ", exec_cycles_app
-        print "<debugging> synch_cost: ", synch_cost
-        print "<debugging> CPI: ", self.CPI
+        print "<debug> mem_ld: ", self.GPU_stats.roundtrip_DRAM_access_latency
+        print "<debug> departure_del_uncoal: ", self.GPU_stats.departure_del_uncoal
+        print "<debug> threads_per_block: ", self.thread_config.threads_per_block
+        print "<debug> blocks: ", self.thread_config.blocks
+        print "<debug> active_blocks_per_sm: ", self.active_blocks_per_SM
+        print "<debug> active_sms: ", self.active_SMs
+        print "<debug> active_warps_per_sm: ", self.active_warps_per_SM
+        print "<debug> comp_insts: ", self.kernel_stats.comp_instructions
+        print "<debug> uncoal_mem_insts: ", self.kernel_stats.mem_instructions_uncoal
+        print "<debug> coal_mem_insts: ", self.kernel_stats.mem_instructions_coal
+        print "<debug> synch_insts: ", self.kernel_stats.synch_instructions
+        print "<debug> mem_trans_per_warp_coal: ", self.GPU_stats.mem_trans_per_warp_coal  # noqa
+        print "<debug> mem_trans_per_warp_uncoal: ", self.GPU_stats.mem_trans_per_warp_uncoal  # noqa
+        print "<debug> load_bytes_per_warp: ", self.load_bytes_per_warp
+        print "<debug> departure_delay: ", departure_delay
+        print "<debug> mem_l: ", mem_l
+        print "<debug> mwp_without_bw_full: ", mwp_without_bw_full
+        print "<debug> bw_per_warp: ", bw_per_warp
+        print "<debug> mwp_peak_bw: ", mwp_peak_bw
+        print "<debug> MWP: ", self.MWP
+        print "<debug> comp_cycles: ", comp_cycles
+        print "<debug> mem_cycles: ", mem_cycles
+        print "<debug> CWP_full: ", cwp_full
+        print "<debug> CWP: ", self.CWP
+        print "<debug> rep: ", reps_per_SM
+        print "<debug> exec_cycles_app: ", exec_cycles_app
+        print "<debug> synch_cost: ", synch_cost
+        print "<debug> CPI: ", self.CPI
         '''
         return exec_cycles_app+synch_cost
 
