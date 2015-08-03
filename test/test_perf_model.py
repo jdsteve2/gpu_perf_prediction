@@ -1,6 +1,7 @@
 import sys
 sys.path.append("../performance_model")
 from perf_model import GPUStats, KernelStats, ThreadConfig, PerfModel
+import math
 #from future import division
 import numpy as np
 import matplotlib.pyplot as plt
@@ -32,9 +33,9 @@ def test_HK_sepia():
     print "TESTING sepia..."
 
     # input size: 7000x7000
-    n = 7000
+    n = 7000.
     gstats = GPUStats('FX5600')
-    kstats = KernelStats(71, 6, 0, 0)  # TODO synch_insns=0 ?
+    kstats = KernelStats(71, 6, 0, 1)  # TODO synch_insns=0 ?
     expected = 153
 
     trials = 17
@@ -47,7 +48,8 @@ def test_HK_sepia():
     CWPs = []
     MWPs = []
     for i in range(trials):
-        tconfig = ThreadConfig(threads[i], n*n/threads[i])
+        #print " ", n*n/threads[i], math.ceil(n/(threads[i]**0.5))**2, n
+        tconfig = ThreadConfig(threads[i], math.ceil(n/(threads[i]**0.5))**2)
         model = PerfModel(gstats, kstats, tconfig,
                         np.dtype(np.float32), active_blocks=active_blocks[i])
         times.append(model.compute_total_cycles() /
@@ -63,6 +65,7 @@ def test_HK_sepia():
     expect_avg_cwp = 14
     expect_avg_mwp = 2
 
+    print "expected time (approx): ", expected
     print "avg occ: ", np.average(occupancies), "expected: ~", expect_avg_occ
     print "avg CPI: ", np.average(CPIs), "expected: ~", expect_avg_cpi
     print "avg CWP: ", np.average(CWPs), "expected: ~", expect_avg_cwp
@@ -84,7 +87,7 @@ def test_HK_linear():
     print "TESTING linear..."
 
     # input size: 10000x10000
-    n = 10000
+    n = 10000.
     gstats = GPUStats('FX5600')
     kstats = KernelStats(111, 30, 0, 0)  # TODO synch_insns=0 ?
     expected = 775
@@ -99,7 +102,8 @@ def test_HK_linear():
     CWPs = []
     MWPs = []
     for i in range(trials):
-        tconfig = ThreadConfig(threads[i], n*n/threads[i])
+        tconfig = ThreadConfig(threads[i], math.ceil(n/(threads[i]**0.5))**2)
+        #print " ", n*n/threads[i], math.ceil(n/(threads[i]**0.5))**2, n
         model = PerfModel(gstats, kstats, tconfig,
                         np.dtype(np.float32), active_blocks=active_blocks[i])
         times.append(model.compute_total_cycles() /
@@ -115,6 +119,7 @@ def test_HK_linear():
     expect_avg_cwp = 14
     expect_avg_mwp = 2
 
+    print "expected time (approx): ", expected
     print "avg occ: ", np.average(occupancies), "expected: ~", expect_avg_occ
     print "avg CPI: ", np.average(CPIs), "expected: ~", expect_avg_cpi
     print "avg CWP: ", np.average(CWPs), "expected: ~", expect_avg_cwp
@@ -136,7 +141,7 @@ def test_HK_blackscholes():
     print "TESTING blackscholes..."
 
     # input size: 9000000
-    n = 9000000
+    n = 9000000.
     gstats = GPUStats('FX5600')
     kstats = KernelStats(137, 7, 0, 0)  # TODO synch_insns=0 ?
     expected = 34
@@ -151,7 +156,8 @@ def test_HK_blackscholes():
     CWPs = []
     MWPs = []
     for i in range(trials):
-        tconfig = ThreadConfig(threads[i], n/threads[i])
+        #print " ", n/threads[i], math.ceil(n/threads[i]), n
+        tconfig = ThreadConfig(threads[i], math.ceil(n/threads[i]))
         model = PerfModel(gstats, kstats, tconfig,
                         np.dtype(np.float32), active_blocks=active_blocks[i])
         times.append(model.compute_total_cycles() /
@@ -167,6 +173,7 @@ def test_HK_blackscholes():
     expect_avg_cwp = 9
     expect_avg_mwp = 2
 
+    print "expected time (approx): ", expected
     print "avg occ: ", np.average(occupancies), "expected: ~", expect_avg_occ
     print "avg CPI: ", np.average(CPIs), "expected: ~", expect_avg_cpi
     print "avg CWP: ", np.average(CWPs), "expected: ~", expect_avg_cwp
@@ -188,8 +195,8 @@ def test_HK_SVM():
     print "TESTING SVM..."
 
     # input size: 736*992
-    n1 = 736
-    n2 = 992
+    n1 = 736.
+    n2 = 992.
     gstats = GPUStats('FX5600')
     kstats = KernelStats(10871, 0, 819, 0)  # TODO synch_insns=0 ?
     expected = 14
@@ -204,7 +211,8 @@ def test_HK_SVM():
     CWPs = []
     MWPs = []
     for i in range(trials):
-        tconfig = ThreadConfig(threads[i], (n1*n2)/threads[i])
+        tconfig = ThreadConfig(threads[i],
+                    math.ceil(n1/(threads[i]**0.5))*math.ceil(n2/(threads[i]**0.5)))
         model = PerfModel(gstats, kstats, tconfig,
                         np.dtype(np.float32), active_blocks=active_blocks[i])
         times.append(model.compute_total_cycles() /
@@ -220,6 +228,7 @@ def test_HK_SVM():
     expect_avg_cwp = 9
     expect_avg_mwp = 12
 
+    print "expected time (approx): ", expected
     print "avg occ: ", np.average(occupancies), "expected: ~", expect_avg_occ
     print "avg CPI: ", np.average(CPIs), "expected: ~", expect_avg_cpi
     print "avg CWP: ", np.average(CWPs), "expected: ~", expect_avg_cwp
