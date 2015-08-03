@@ -169,9 +169,9 @@ class PerfModel(object):
 
         # Determine number of active SMs
         # active_SMs == SM_count, unless we have a very small number of blocks
-        self.active_SMs = min(
-                            thread_config.blocks/self.active_blocks_per_SM,
-                            GPU_stats.SM_count)
+        self.active_SMs = min(math.ceil(
+                            thread_config.blocks/self.active_blocks_per_SM),
+                            GPU_stats.SM_count)  # TODO floor or ceil?
 
         # Calculate number of active warps per SM
         self.active_warps_per_SM = self.active_blocks_per_SM*math.ceil(
@@ -209,6 +209,7 @@ class PerfModel(object):
         # "If the number of active warps is less than MWP_Without_BW_full,
         # the processor does not have enough number of warps to utilize
         # memory level parallelism"
+        #print " ", mem_l, departure_delay, mem_l/departure_delay
         mwp_without_bw_full = mem_l/departure_delay
         #mwp_without_bw_full = round(mwp_without_bw_full, 2)
         mwp_without_bw = min(mwp_without_bw_full, self.active_warps_per_SM)
@@ -225,8 +226,10 @@ class PerfModel(object):
         n = self.active_warps_per_SM
 
         # how many times does an SM execute active_blocks_per_SM blocks?
-        reps_per_SM = self.thread_config.blocks/(
-                    self.active_blocks_per_SM * self.active_SMs)
+        reps_per_SM = math.ceil(self.thread_config.blocks/(
+                    self.active_blocks_per_SM * self.active_SMs))
+        # TODO added ceil above^, is that right?
+        #print " ", reps_per_SM, self.thread_config.blocks, self.active_blocks_per_SM, self.active_SMs
 
         # bandwidth per warp (GB/second)
         bw_per_warp = self.GPU_stats.sm_clock_freq * \
@@ -247,6 +250,7 @@ class PerfModel(object):
         #  n: maximum number of active warps per SM based on machine resources
         #     like register usage, shared memory usage, etc.
         self.MWP = min(mwp_without_bw, mwp_peak_bw, n)
+        #print " ", mwp_without_bw, mwp_peak_bw, n
         # TODO n already incorporated above
         #self.MWP = round(self.MWP, 2)
 
@@ -279,9 +283,10 @@ class PerfModel(object):
 
         # compute CPI (cycles per instruction) just to see what it is
         self.CPI = exec_cycles_app/(self.kernel_stats.total_instructions *
-                   (self.thread_config.threads_per_block /
+                   math.ceil(self.thread_config.threads_per_block /
                     self.GPU_stats.threads_per_warp) *
                    (self.thread_config.blocks/self.active_SMs))
+        # TODO added ceil^, is this right?
         self.occ = n*(self.GPU_stats.threads_per_warp /
                       self.GPU_stats.max_threads_per_SM)
         '''
