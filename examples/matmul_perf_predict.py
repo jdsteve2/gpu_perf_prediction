@@ -8,6 +8,7 @@ import sys
 sys.path.append("../performance_model")
 from perf_model import GPUStats, KernelStats, ThreadConfig, PerfModel
 import islpy as isl
+import math
 
 # setup
 # -----
@@ -106,10 +107,11 @@ evt, (out,) = knl(queue, a=a_mat_dev, b=b_mat_dev, c=c_mat_dev)
 evt.wait()
 
 gstats = GPUStats('TeslaK20')
-total_threads = n*n
+total_blocks = math.ceil(float(n)/BLOCKSIZE)*math.ceil(float(n)/BLOCKSIZE)
+total_threads = total_blocks*BLOCKSIZE*BLOCKSIZE
 kstats = KernelStats(float(flops)/total_threads, float(f32uncoal)/total_threads,
                      float(f32coal)/total_threads, float(barrier_count))
-tconfig = ThreadConfig(BLOCKSIZE*BLOCKSIZE, n/BLOCKSIZE*n/BLOCKSIZE)
+tconfig = ThreadConfig(BLOCKSIZE*BLOCKSIZE, total_blocks)
 
 model = PerfModel(gstats, kstats, tconfig, np.dtype(np.float32), active_blocks=8)
 cycles = model.compute_total_cycles()
