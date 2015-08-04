@@ -10,6 +10,7 @@ import sys
 sys.path.append("../performance_model")
 from perf_model import GPUStats, KernelStats, ThreadConfig, PerfModel
 import islpy as isl
+import math
 
 # setup
 # -----
@@ -43,7 +44,7 @@ knl = lp.split_iname(knl, "i", unroll*BLOCKSIZE,
 knl = lp.split_iname(knl, "i_inner", BLOCKSIZE,
      outer_tag="unr", inner_tag="l.0")
 
-check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=False)
+#check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=False)
 #print "Correctness check: \n", check
 
 # use ptx src to determine resource usage
@@ -107,10 +108,11 @@ evt, (out,) = knl(queue, x=x_vec_dev, y=y_vec_dev, z=z_vec_dev)
 evt.wait()
 
 gstats = GPUStats('TeslaK20')
-total_threads = n/unroll
+total_blocks = math.ceil(n/(BLOCKSIZE*unroll))
+total_threads = total_blocks*BLOCKSIZE
 kstats = KernelStats(flops/total_threads, f32uncoal/total_threads,
                      f32coal/total_threads, barrier_count)
-tconfig = ThreadConfig(BLOCKSIZE, n/(BLOCKSIZE*unroll))
+tconfig = ThreadConfig(BLOCKSIZE, total_blocks)
 
 model = PerfModel(gstats, kstats, tconfig, np.dtype(np.float32), active_blocks=8)
 cycles = model.compute_total_cycles()
