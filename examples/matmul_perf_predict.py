@@ -1,3 +1,5 @@
+from __future__ import division
+
 import numpy as np
 import loopy as lp
 import pyopencl as cl
@@ -43,7 +45,7 @@ knl = lp.split_iname(knl, "k", BLOCKSIZE)
 knl = lp.add_prefetch(knl, "a", ["k_inner", "i_inner"])
 knl = lp.add_prefetch(knl, "b", ["j_inner", "k_inner", ])
 
-check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=False)
+#check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=False)
 #print "Correctness check: \n", check
 
 # use ptx src to determine resource usage
@@ -107,10 +109,10 @@ evt, (out,) = knl(queue, a=a_mat_dev, b=b_mat_dev, c=c_mat_dev)
 evt.wait()
 
 gstats = GPUStats('TeslaK20')
-total_blocks = math.ceil(float(n)/BLOCKSIZE)*math.ceil(float(n)/BLOCKSIZE)
+total_blocks = math.ceil(n/BLOCKSIZE)*math.ceil(n/BLOCKSIZE)
 total_threads = total_blocks*BLOCKSIZE*BLOCKSIZE
-kstats = KernelStats(float(flops)/total_threads, float(f32uncoal)/total_threads,
-                     float(f32coal)/total_threads, float(barrier_count))
+kstats = KernelStats(flops/total_threads, f32uncoal/total_threads,
+                     f32coal/total_threads, barrier_count)
 tconfig = ThreadConfig(BLOCKSIZE*BLOCKSIZE, total_blocks)
 
 model = PerfModel(gstats, kstats, tconfig, np.dtype(np.float32), active_blocks=8)

@@ -1,3 +1,5 @@
+from __future__ import division
+
 import numpy as np
 import loopy as lp
 import pyopencl as cl
@@ -106,8 +108,8 @@ evt.wait()
 
 gstats = GPUStats('TeslaK20')
 total_threads = n/unroll
-kstats = KernelStats(float(flops)/total_threads, float(f32uncoal)/total_threads,
-                     float(f32coal)/total_threads, float(barrier_count))
+kstats = KernelStats(flops/total_threads, f32uncoal/total_threads,
+                     f32coal/total_threads, barrier_count)
 tconfig = ThreadConfig(BLOCKSIZE, n/(BLOCKSIZE*unroll))
 
 model = PerfModel(gstats, kstats, tconfig, np.dtype(np.float32), active_blocks=8)
