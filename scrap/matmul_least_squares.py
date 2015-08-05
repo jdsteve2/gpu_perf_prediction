@@ -171,12 +171,14 @@ for n in nvals:
         actual_times.append((evt.profile.END - evt.profile.START)*1e-9)
         predicted_times.append(cycles/(gstats.sm_clock_freq*10**9))
 
-        lstsq_A.append([n*n, total_blocks, total_threads, BSIZEx*BSIZEy,
-                        active_blks, np.dtype(np.float32).itemsize, flops/(n*n),
-                        f32uncoal/(n*n), f32coal/(n*n), barrier_count])
+        lstsq_A.append([n*n, total_blocks, 1.0/total_threads, BSIZEx*BSIZEy,
+                        1.0/active_blks, np.dtype(np.float32).itemsize, flops/(n*n),
+                        f32uncoal/(n*n), f32coal/(n*n), barrier_count, 1.0])
         lstsq_y.append(actual_times[-1])
 
 (result_lstsq,resid,q,q) = np.linalg.lstsq(lstsq_A,lstsq_y)
+
+print("Least Squares Residual:\n", np.dot(lstsq_A,result_lstsq)-lstsq_y)
 
 print("="*40+"TIMING RESULTS")
 print("n\tBx\tBy\tactual\t\tpredicted\terror\t\tlstsq\t\terror")
