@@ -47,7 +47,7 @@ def test_HK_sepia():
     CPIs = []
     CWPs = []
     MWPs = []
-    print "blk sz\tactive\tocc\t\tcwp\t\tmwp\t\ttime"
+    print "blk sz\tactive\tocc\t\tcwp\t\tmwp\t\ttime\t\tcpi"
     for i in range(trials):
         #print " ", n*n/threads[i], math.ceil(n/(threads[i]**0.5))**2, n
         tconfig = ThreadConfig(threads[i], math.ceil(n/(threads[i]**0.5))**2)
@@ -102,7 +102,7 @@ def test_HK_linear():
     CPIs = []
     CWPs = []
     MWPs = []
-    print "blk sz\tactive\tocc\t\tcwp\t\tmwp\t\ttime"
+    print "blk sz\tactive\tocc\t\tcwp\t\tmwp\t\ttime\t\tcpi"
     for i in range(trials):
         tconfig = ThreadConfig(threads[i], math.ceil(n/(threads[i]**0.5))**2)
         #print " ", n*n/threads[i], math.ceil(n/(threads[i]**0.5))**2, n
@@ -157,7 +157,7 @@ def test_HK_blackscholes():
     CPIs = []
     CWPs = []
     MWPs = []
-    print "blk sz\tactive\tocc\t\tcwp\t\tmwp\t\ttime"
+    print "blk sz\tactive\tocc\t\tcwp\t\tmwp\t\ttime\t\tcpi"
     for i in range(trials):
         #print " ", n/threads[i], math.ceil(n/threads[i]), n
         tconfig = ThreadConfig(threads[i], math.ceil(n/threads[i]))
@@ -213,7 +213,7 @@ def test_HK_SVM():
     CPIs = []
     CWPs = []
     MWPs = []
-    print "blk sz\tactive\tocc\t\tcwp\t\tmwp\t\ttime"
+    print "blk sz\tactive\tocc\t\tcwp\t\tmwp\t\ttime\t\tcpi"
     for i in range(trials):
         tconfig = ThreadConfig(threads[i],
                     math.ceil(n1/(threads[i]**0.5))*math.ceil(n2/(threads[i]**0.5)))
