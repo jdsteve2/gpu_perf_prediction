@@ -176,9 +176,11 @@ for n in nvals:
                         f32uncoal/(n*n), f32coal/(n*n), barrier_count, 1.0])
         lstsq_y.append(actual_times[-1])
 
-(result_lstsq,resid,q,q) = np.linalg.lstsq(lstsq_A,lstsq_y)
-
+result_lstsq, resid, q, q = np.linalg.lstsq(lstsq_A,lstsq_y)
+U, s, V = np.linalg.svd(lstsq_A, full_matrices=False)
 print("Least Squares Residual:\n", np.dot(lstsq_A,result_lstsq)-lstsq_y)
+print("Least Squares singular values:\n", s)
+
 
 print("="*40+"TIMING RESULTS")
 print("n\tBx\tBy\tactual\t\tpredicted\terror\t\tlstsq\t\terror")
