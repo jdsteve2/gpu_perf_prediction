@@ -4,7 +4,7 @@ import numpy as np
 import loopy as lp
 import pyopencl as cl
 import pyopencl.array
-import pyopencl.clrandom
+import pyopencl.clrandom  # noqa
 from loopy.statistics import get_op_poly, get_DRAM_access_poly, get_barrier_poly
 import sys
 sys.path.append("../performance_model")
@@ -12,38 +12,6 @@ from perf_model import GPUStats, KernelStats, ThreadConfig, PerfModel
 import islpy as isl
 import math
 
-"""
-
-A = [[1, 2, 3, 4],
-     [1.5, 4, 2.1, 6.5],
-     [2, 2, 2, 2],
-     [0, 9, 10.2, 7],
-     [2.5, 2.5, 6.1, 6]]
-init = [0, 0, 0, 0]
-a = [1, 2, 3, 4]
-b = [1.5, 4, 2.1, 6.5]
-c = [2, 2, 2, 2]
-d = [0, 9, 10.2, 7]
-e = [2.5, 2.5, 6.1, 6]
-
-A = np.vstack((init,a,b,c,d,e))
-
-A = []
-A.append(a)
-A.append(b)
-A.append(c)
-A.append(d)
-A.append(e)
-
-y = [10,14,8,26.2,17]
-
-print(A)
-print(y)
-
-(result,resid,q,q) = np.linalg.lstsq(A,y)
-print(result)
-
-"""
 
 # setup
 # -----
@@ -90,7 +58,6 @@ for n in nvals:
         #check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=True)
         #print "Correctness check: \n", check
 
-
         # use ptx src to determine resource usage
         cknl = lp.compiled.CompiledKernel(ctx, knl)
         ptx_src = cknl.cl_kernel_info().cl_kernel.program.binaries[0]
@@ -112,7 +79,6 @@ for n in nvals:
                             isl.PwQPolynomial('{ 0 }')
                             ).eval_with_dict({'n': n})
         f32coal = f32coal_l + f32coal_s
-        #print "coalesced: %i, (stores: %i, loads: %i)" % (f32coal, f32coal_s, f32coal_l)
         f32uncoal_l = sub_map.dict.get(
                             (np.dtype(np.float32), 'nonconsecutive', 'load'),
                             isl.PwQPolynomial('{ 0 }')
@@ -176,9 +142,9 @@ for n in nvals:
                         f32uncoal/(n*n), f32coal/(n*n), barrier_count, 1.0])
         lstsq_y.append(actual_times[-1])
 
-result_lstsq, resid, q, q = np.linalg.lstsq(lstsq_A,lstsq_y)
+result_lstsq, resid, q, q = np.linalg.lstsq(lstsq_A, lstsq_y)
 U, s, V = np.linalg.svd(lstsq_A, full_matrices=False)
-print("Least Squares Residual:\n", np.dot(lstsq_A,result_lstsq)-lstsq_y)
+print("Least Squares Residual:\n", np.dot(lstsq_A, result_lstsq)-lstsq_y)
 print("Least Squares singular values:\n", s)
 
 
@@ -192,36 +158,20 @@ for i in range(trials_n):
         actual = actual_times[i*len(configs_t)+j]
         rel_error[i].append((predicted-actual)/actual)
         # least squares
-        predicted_lstsq = np.dot(lstsq_A[i*len(configs_t)+j],result_lstsq)
-        print("%i\t%i\t%i\t%f\t%f\t%f\t%f\t%f" % 
+        predicted_lstsq = np.dot(lstsq_A[i*len(configs_t)+j], result_lstsq)
+        print("%i\t%i\t%i\t%f\t%f\t%f\t%f\t%f" %
                             (nvals[i], configs_t[j][0], configs_t[j][1],
                             actual, predicted, rel_error[i][-1], predicted_lstsq,
                             (predicted_lstsq-actual)/actual))
-        
 
 print("\n\t", end='')
 for config in configs_t:
-    print("(%i,%i)\t\t" % (config[0],config[1]), end='')
+    print("(%i,%i)\t\t" % (config[0], config[1]), end='')
 print("")
 for i in range(trials_n):
     print("%i\t" % (nvals[i]), end='')
     for j in range(len(configs_t)):
         print("%f\t" % (rel_error[i][j]), end='')
     print("")
-"""
-print("="*40)
-print("A: ")
-for row in lstsq_A:
-    print(row)
-print("y: ")
-print(lstsq_y)
-(result,resid,q,q) = np.linalg.lstsq(lstsq_A,lstsq_y)
-print("result: ")
-print(result)
-print("resid: ")
-print(resid)
 
-print("="*40)
-for i in range(len(lstsq_y)):
-    print(np.dot(lstsq_A[i],result), lstsq_y[i])
-"""
+
