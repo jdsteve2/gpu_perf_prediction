@@ -24,7 +24,8 @@ predicted_times = []
 actual_times = []
 trials_n = 4
 nvals = [2**(10+x) for x in range(trials_n)]
-configs_t = [(8, 8, 8), (16, 8, 8), (16, 16, 8), (32, 16, 4), (32, 32, 2)]
+configs_t = [(8, 8), (16, 8), (16, 16), (32, 16), (32, 32)]
+#TODO figure out smem usage issue
 #n = 2**10
 for n in nvals:
     a_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=np.float32)
@@ -46,7 +47,8 @@ for n in nvals:
 
     ref_knl = knl
 
-    for BSIZEx, BSIZEy, active_blks in configs_t:
+    #for BSIZEx, BSIZEy, active_blks in configs_t:
+    for BSIZEx, BSIZEy in configs_t:
 
         knl = ref_knl
         knl = lp.split_iname(knl, "i", BSIZEy, outer_tag="g.0", inner_tag="l.1")
@@ -118,14 +120,16 @@ for n in nvals:
         evt.wait()
 
         gstats = GPUStats('TeslaK20')
+        reg32_per_thread = 25
+        shared_mem_per_thread = 2*4*BSIZEx*BSIZEy
         total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
         total_threads = total_blocks*BSIZEx*BSIZEy
-        kstats = KernelStats(flops/(n*n), f32uncoal/(n*n),
-                             f32coal/(n*n), barrier_count)
+        kstats = KernelStats(flops/(n*n), f32uncoal/(n*n), f32coal/(n*n),
+                             barrier_count, reg32_per_thread, shared_mem_per_thread)
         tconfig = ThreadConfig(BSIZEx*BSIZEy, total_blocks)
 
         model = PerfModel(gstats, kstats, tconfig,
-                        np.dtype(np.float32), active_blocks=active_blks)
+                        np.dtype(np.float32))  #, active_blocks=active_blks)
         cycles = model.compute_total_cycles()
 
         '''
@@ -138,7 +142,7 @@ for n in nvals:
         predicted_times.append(cycles/(gstats.sm_clock_freq*10**9))
 
         lstsq_A.append([n*n, total_blocks, 1.0/total_threads, BSIZEx*BSIZEy,
-                        1.0/active_blks, np.dtype(np.float32).itemsize, flops/(n*n),
+                        1.0/model.active_blocks_per_SM, np.dtype(np.float32).itemsize, flops/(n*n),
                         f32uncoal/(n*n), f32coal/(n*n), barrier_count, 1.0])
         lstsq_y.append(actual_times[-1])
 

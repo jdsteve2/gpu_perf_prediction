@@ -71,8 +71,17 @@ class GPUStats(object):
             self.mem_trans_per_warp_coal = 1  # Table 3
             self.mem_trans_per_warp_uncoal = 32  # Table 3
             self.SM_count = 16  # Table 3
-            self.max_threads_per_SM = 768
+
             self.max_blocks_per_SM = 8
+            self.max_threads_per_SM = 768
+            self.max_warps_per_SM = 24
+            self.reg32_per_SM = 8192
+            self.reg_alloc_unit_size = 256
+            self.reg_alloc_granularity = 'block'
+            self.shared_mem_per_SM = 16384
+            self.shared_mem_alloc_size = 512
+            self.warp_alloc_granularity = 2
+
         elif (gpu_name == 'HKexample'):
             self.threads_per_warp = 32
             self.issue_cycles = 4
@@ -104,11 +113,64 @@ class GPUStats(object):
             self.mem_trans_per_warp_coal = 1  # TODO Is this correct?
             self.mem_trans_per_warp_uncoal = 32  # TODO check on this
             self.SM_count = 13
-            self.max_threads_per_SM = 2048
+
             self.max_blocks_per_SM = 16
+            self.max_threads_per_SM = 2048 
+            self.max_warps_per_SM = 64
+            self.reg32_per_SM = 65536
+            self.reg_alloc_unit_size = 256
+            self.reg_alloc_granularity = 'warp'
+            self.shared_mem_per_SM = 49152
+            self.shared_mem_alloc_size = 256
+            self.warp_alloc_granularity = 4
         else:
             print "Error: unknown hardware"
         #TODO use compute capability to get some of these numbers
+
+
+def round_int_up_to(n, precision):
+    return math.ceil(n/precision)*precision
+
+def round_int_down_to(n, precision):
+    return math.floor(n/precision)*precision
+
+def get_occupancy_blocks(gstats, threads_per_block, reg32_per_thread,
+                         shared_mem_per_block):
+    effective_warps_per_block = math.ceil(threads_per_block/gstats.threads_per_warp)
+    effective_threads_per_block = effective_warps_per_block*gstats.threads_per_warp
+    if gstats.reg_alloc_granularity == 'block':
+        effective_reg32_per_block = round_int_up_to(reg32_per_thread*
+                                        gstats.threads_per_warp*
+                                        round_int_up_to(effective_warps_per_block,
+                                        gstats.warp_alloc_granularity), gstats.reg_alloc_unit_size)
+
+    if threads_per_block == 0:
+        limit_by_warps = gstats.max_blocks_per_SM
+    else:
+        limit_by_warps = math.floor(gstats.max_warps_per_SM/
+                                    effective_warps_per_block)
+    if reg32_per_thread == 0:
+        limit_by_regs = gstats.max_blocks_per_SM
+    else:
+        if gstats.reg_alloc_granularity == 'block':
+            limit_by_regs = math.floor(gstats.reg32_per_SM/effective_reg32_per_block)
+        elif gstats.reg_alloc_granularity == 'warp':
+            limit_by_regs = math.floor( round_int_down_to(
+                            gstats.reg32_per_SM/round_int_up_to(
+                            reg32_per_thread*gstats.threads_per_warp,
+                            gstats.reg_alloc_unit_size),
+                            gstats.warp_alloc_granularity)/
+                            effective_warps_per_block )
+        else:
+            print "todo print error here"
+    if shared_mem_per_block == 0:
+        limit_by_shared_mem = gstats.max_blocks_per_SM
+    else:
+        limit_by_shared_mem = math.floor(gstats.shared_mem_per_SM/
+                                         round_int_up_to(shared_mem_per_block,
+                                         gstats.shared_mem_alloc_size))
+    return min(limit_by_warps, limit_by_regs, limit_by_shared_mem,
+               gstats.max_blocks_per_SM)
 
 
 class KernelStats(object):
@@ -122,13 +184,17 @@ class KernelStats(object):
     # total_instructions:       comp_instructions + mem_insns_total
 
     def __init__(self, comp_instructions, mem_instructions_uncoal,
-                        mem_instructions_coal, synch_instructions):
+                 mem_instructions_coal, synch_instructions,
+                 reg32_per_thread=None,
+                 shared_mem_per_block=None):
         self.comp_instructions = comp_instructions
         self.mem_instructions_uncoal = mem_instructions_uncoal
         self.mem_instructions_coal = mem_instructions_coal
         self.synch_instructions = synch_instructions
         self.mem_insns_total = mem_instructions_uncoal + mem_instructions_coal
         self.total_instructions = comp_instructions + self.mem_insns_total
+        self.reg32_per_thread = reg32_per_thread
+        self.shared_mem_per_block = shared_mem_per_block
 
     def __str__(self):
         return "\ncomp_insns: " + str(self.comp_instructions) + \
@@ -136,7 +202,9 @@ class KernelStats(object):
                "\nmem_insns_coal: " + str(self.mem_instructions_coal) + \
                "\nmem_insns_total: " + str(self.mem_insns_total) + \
                "\nsynch_insns: " + str(self.synch_instructions) + \
-               "\ntotal_insns: " + str(self.total_instructions)
+               "\ntotal_insns: " + str(self.total_instructions) + \
+               "\nreg32_per_thread: " + str(self.reg32_per_thread) + \
+               "\nshared_mem_per_block: " + str(self.shared_mem_per_block)
 
 
 class ThreadConfig(object):
@@ -148,7 +216,7 @@ class ThreadConfig(object):
 class PerfModel(object):
 
     def __init__(self, GPU_stats, kernel_stats, thread_config, dtype,
-                                                    active_blocks=None):
+                 active_blocks=None):
         self.GPU_stats = GPU_stats
         self.kernel_stats = kernel_stats
         self.thread_config = thread_config
@@ -160,11 +228,16 @@ class PerfModel(object):
         # Determine # of blocks that can run simultaneously on one SM
         #TODO calculate this correctly figuring in register/shared mem usage
         if active_blocks is None:
-            print "<debugging> active_blocks was None, estimating..."
-            self.active_blocks_per_SM = min(
-                math.floor(GPU_stats.max_threads_per_SM /
-                thread_config.threads_per_block),
-                GPU_stats.max_blocks_per_SM)
+            if self.kernel_stats.reg32_per_thread is None:
+                print "TODO insert appropriate warning here (estimating reg usage)"
+                self.kernel_stats.reg32_per_SM = 7
+            if self.kernel_stats.shared_mem_per_block is None:
+                print "TODO insert appropriate warning here (estimating reg usage)"
+                self.kernel_stats.shared_mem_per_thread = 0
+            self.active_blocks_per_SM = get_occupancy_blocks(self.GPU_stats,
+                                            self.thread_config.threads_per_block,
+                                            self.kernel_stats.reg32_per_thread,
+                                            self.kernel_stats.shared_mem_per_block)
         else:
             self.active_blocks_per_SM = active_blocks
         #print("DEBUGGING... self.active_blocks_per_SM: ", self.active_blocks_per_SM)

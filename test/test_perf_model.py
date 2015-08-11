@@ -35,13 +35,13 @@ def test_HK_sepia():
     # input size: 7000x7000
     n = 7000.
     gstats = GPUStats('FX5600')
-    kstats = KernelStats(71, 6, 0, 1)  # TODO synch_insns=0 ?
+    reg32_per_thread = 7
+    shared_mem_per_block = 52
+    kstats = KernelStats(71, 6, 0, 1, reg32_per_thread, shared_mem_per_block)  # TODO synch_insns=0 ?
     expected = 153
 
     trials = 17
     threads = [(x+6)*(x+6) for x in range(trials)]
-    active_blocks = [8, 8, 8, 8, 6, 6, 4, 4, 3, 3, 3, 2, 2, 2, 1, 1, 1]
-    #active_blocks = [8, 8, 8, 8, 8, 6, 6, 4, 4, 3, 3, 3, 2, 2, 1, 1, 1]
     times = []
     occupancies = []
     CPIs = []
@@ -51,15 +51,14 @@ def test_HK_sepia():
     for i in range(trials):
         #print " ", n*n/threads[i], math.ceil(n/(threads[i]**0.5))**2, n
         tconfig = ThreadConfig(threads[i], math.ceil(n/(threads[i]**0.5))**2)
-        model = PerfModel(gstats, kstats, tconfig,
-                        np.dtype(np.float32), active_blocks=active_blocks[i])
+        model = PerfModel(gstats, kstats, tconfig, np.dtype(np.float32))
         times.append(model.compute_total_cycles() /
                     (gstats.sm_clock_freq*(10**9))*(10**3))
         occupancies.append(model.occ)
         CPIs.append(model.CPI)
         CWPs.append(model.CWP)
         MWPs.append(model.MWP)
-        print "%i\t%i\t%f\t%f\t%f\t%f\t%f" % (threads[i], active_blocks[i],
+        print "%i\t%i\t%f\t%f\t%f\t%f\t%f" % (threads[i], model.active_blocks_per_SM,
                                               occupancies[i], CWPs[i], MWPs[i],
                                               CPIs[i], times[i])
 
@@ -97,13 +96,13 @@ def test_HK_blackscholes():
     # input size: 9000000
     n = 9000000.
     gstats = GPUStats('FX5600')
-    kstats = KernelStats(137, 7, 0, 0)  # TODO synch_insns=0 ?
+    reg32_per_thread = 11
+    shared_mem_per_block = 36
+    kstats = KernelStats(137, 7, 0, 0, reg32_per_thread, shared_mem_per_block)  # TODO synch_insns=0 ?
     expected = 34
 
     trials = 9
     threads = [(x*2+6)*(x*2+6) for x in range(trials)]
-    active_blocks = [8, 8, 5, 3, 2, 2, 1, 1, 1]
-    #active_blocks = [8, 8, 8, 5, 3, 3, 2, 1, 1]
     times = []
     occupancies = []
     CPIs = []
@@ -113,15 +112,14 @@ def test_HK_blackscholes():
     for i in range(trials):
         #print " ", n/threads[i], math.ceil(n/threads[i]), n
         tconfig = ThreadConfig(threads[i], math.ceil(n/threads[i]))
-        model = PerfModel(gstats, kstats, tconfig,
-                        np.dtype(np.float32), active_blocks=active_blocks[i])
+        model = PerfModel(gstats, kstats, tconfig, np.dtype(np.float32))
         times.append(model.compute_total_cycles() /
                     (gstats.sm_clock_freq*(10**9))*(10**3))
         occupancies.append(model.occ)
         CPIs.append(model.CPI)
         CWPs.append(model.CWP)
         MWPs.append(model.MWP)
-        print "%i\t%i\t%f\t%f\t%f\t%f\t%f" % (threads[i], active_blocks[i],
+        print "%i\t%i\t%f\t%f\t%f\t%f\t%f" % (threads[i], model.active_blocks_per_SM,
                                               occupancies[i], CWPs[i], MWPs[i],
                                               CPIs[i], times[i])
 
@@ -160,13 +158,13 @@ def test_HK_linear():
     # input size: 10000x10000
     n = 10000.
     gstats = GPUStats('FX5600')
-    kstats = KernelStats(111, 30, 0, 0)  # TODO synch_insns=0 ?
+    reg32_per_thread = 15
+    shared_mem_per_block = 60
+    kstats = KernelStats(111, 30, 0, 0, reg32_per_thread, shared_mem_per_block)  # TODO synch_insns=0 ?
     expected = 775
 
     trials = 9
     threads = [(x*2+6)*(x*2+6) for x in range(trials)]
-    active_blocks = [8, 8, 4, 2, 2, 2, 1, 1, 1]
-    #active_blocks = [8, 8, 4, 4, 2, 2, 2, 1, 1]
     times = []
     occupancies = []
     CPIs = []
@@ -176,15 +174,14 @@ def test_HK_linear():
     for i in range(trials):
         tconfig = ThreadConfig(threads[i], (math.ceil(n/(threads[i]**0.5))**2)/2.0)
         #print " ", n*n/threads[i], math.ceil(n/(threads[i]**0.5))**2, n
-        model = PerfModel(gstats, kstats, tconfig,
-                        np.dtype(np.float32), active_blocks=active_blocks[i])
+        model = PerfModel(gstats, kstats, tconfig, np.dtype(np.float32))
         times.append(model.compute_total_cycles() /
                     (gstats.sm_clock_freq*(10**9))*(10**3))
         occupancies.append(model.occ)
         CPIs.append(model.CPI)
         CWPs.append(model.CWP)
         MWPs.append(model.MWP)
-        print "%i\t%i\t%f\t%f\t%f\t%f\t%f" % (threads[i], active_blocks[i],
+        print "%i\t%i\t%f\t%f\t%f\t%f\t%f" % (threads[i], model.active_blocks_per_SM,
                                               occupancies[i], CWPs[i], MWPs[i],
                                               CPIs[i], times[i])
 
@@ -224,13 +221,13 @@ def test_HK_SVM():
     n1 = 736.
     n2 = 992.
     gstats = GPUStats('FX5600')
-    kstats = KernelStats(10871, 0, 819, 0)  # TODO synch_insns=0 ?
+    reg32_per_thread = 9
+    shared_mem_per_block = 44
+    kstats = KernelStats(10871, 0, 819, 0, reg32_per_thread, shared_mem_per_block)  # TODO synch_insns=0 ?
     expected = 14
 
     trials = 17
     threads = [(x+6)*(x+6) for x in range(trials)]
-    active_blocks = [8, 8, 8, 6, 6, 6, 4, 4, 3, 3, 3, 2, 2, 2, 1, 1, 1]
-    #active_blocks = [8, 8, 8, 8, 6, 6, 6, 4, 4, 3, 3, 3, 2, 2, 2, 1, 1]
     times = []
     occupancies = []
     CPIs = []
@@ -240,15 +237,14 @@ def test_HK_SVM():
     for i in range(trials):
         tconfig = ThreadConfig(threads[i],
                     math.ceil(n1/(threads[i]**0.5))*math.ceil(n2/(threads[i]**0.5))/4.0)
-        model = PerfModel(gstats, kstats, tconfig,
-                        np.dtype(np.float32), active_blocks=active_blocks[i])
+        model = PerfModel(gstats, kstats, tconfig, np.dtype(np.float32))
         times.append(model.compute_total_cycles() /
                     (gstats.sm_clock_freq*(10**9))*(10**3))
         occupancies.append(model.occ)
         CPIs.append(model.CPI)
         CWPs.append(model.CWP)
         MWPs.append(model.MWP)
-        print "%i\t%i\t%f\t%f\t%f\t%f\t%f" % (threads[i], active_blocks[i],
+        print "%i\t%i\t%f\t%f\t%f\t%f\t%f" % (threads[i], model.active_blocks_per_SM,
                                               occupancies[i], CWPs[i], MWPs[i],
                                               CPIs[i], times[i])
 
