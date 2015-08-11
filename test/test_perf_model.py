@@ -68,12 +68,17 @@ def test_HK_sepia():
     expect_avg_cwp = 14
     expect_avg_mwp = 2
 
-    print "expected time (approx): ", expected
-    print "avg occ: ", np.average(occupancies), "expected: ~", expect_avg_occ
-    print "avg CPI: ", np.average(CPIs), "expected: ~", expect_avg_cpi
-    print "avg CWP: ", np.average(CWPs), "expected: ~", expect_avg_cwp
-    print "avg MWP: ", np.average(MWPs), "expected: ~", expect_avg_mwp
-
+    print "\nexpected time (approx): ", expected
+    print "\n\tactual (avg)\texpected (avg)\trel err"
+    print "occ:\t%f\t%f\t%f" % (np.average(occupancies), expect_avg_occ, 
+                    (np.average(occupancies)-expect_avg_occ)/expect_avg_occ)
+    print "CPI:\t%f\t%f\t%f" % (np.average(CPIs), expect_avg_cpi, 
+                    (np.average(CPIs)-expect_avg_cpi)/expect_avg_cpi)
+    print "CWP:\t%f\t%f\t%f" % (np.average(CWPs), expect_avg_cwp, 
+                    (np.average(CWPs)-expect_avg_cwp)/expect_avg_cwp)
+    print "MWP:\t%f\t%f\t%f" % (np.average(MWPs), expect_avg_mwp, 
+                    (np.average(MWPs)-expect_avg_mwp)/expect_avg_mwp)
+    print ""
     '''
     plt.figure("sepia")
     plt.title("sepia")
@@ -83,63 +88,6 @@ def test_HK_sepia():
     plt.show()
     '''
     #assert 1 == 0
-
-
-def test_HK_linear():
-
-    print "TESTING linear..."
-
-    # input size: 10000x10000
-    n = 10000.
-    gstats = GPUStats('FX5600')
-    kstats = KernelStats(111, 30, 0, 0)  # TODO synch_insns=0 ?
-    expected = 775
-
-    trials = 9
-    threads = [(x*2+6)*(x*2+6) for x in range(trials)]
-    active_blocks = [8, 8, 4, 2, 2, 2, 1, 1, 1]
-    #active_blocks = [8, 8, 4, 4, 2, 2, 2, 1, 1]
-    times = []
-    occupancies = []
-    CPIs = []
-    CWPs = []
-    MWPs = []
-    print "blk sz\tactive\tocc\t\tcwp\t\tmwp\t\tcpi\t\ttime"
-    for i in range(trials):
-        tconfig = ThreadConfig(threads[i], math.ceil(n/(threads[i]**0.5))**2)
-        #print " ", n*n/threads[i], math.ceil(n/(threads[i]**0.5))**2, n
-        model = PerfModel(gstats, kstats, tconfig,
-                        np.dtype(np.float32), active_blocks=active_blocks[i])
-        times.append(model.compute_total_cycles() /
-                    (gstats.sm_clock_freq*(10**9))*(10**3))
-        occupancies.append(model.occ)
-        CPIs.append(model.CPI)
-        CWPs.append(model.CWP)
-        MWPs.append(model.MWP)
-        print "%i\t%i\t%f\t%f\t%f\t%f\t%f" % (threads[i], active_blocks[i],
-                                              occupancies[i], CWPs[i], MWPs[i],
-                                              CPIs[i], times[i])
-
-    expect_avg_occ = 0.59
-    expect_avg_cpi = 73
-    expect_avg_cwp = 14
-    expect_avg_mwp = 2
-
-    print "expected time (approx): ", expected
-    print "avg occ: ", np.average(occupancies), "expected: ~", expect_avg_occ
-    print "avg CPI: ", np.average(CPIs), "expected: ~", expect_avg_cpi
-    print "avg CWP: ", np.average(CWPs), "expected: ~", expect_avg_cwp
-    print "avg MWP: ", np.average(MWPs), "expected: ~", expect_avg_mwp
-    '''
-    plt.figure("linear")
-    plt.title("linear")
-    plt.plot(threads, times, 'b*')
-    axes = plt.gca()
-    axes.set_ylim([0, 1600])
-    plt.show()
-    '''
-    #assert 1 == 0
-    #assert (abs(model.compute_total_cycles() - expected) / expected) < TOLERANCE
 
 
 def test_HK_blackscholes():
@@ -182,17 +130,86 @@ def test_HK_blackscholes():
     expect_avg_cwp = 9
     expect_avg_mwp = 2
 
-    print "expected time (approx): ", expected
-    print "avg occ: ", np.average(occupancies), "expected: ~", expect_avg_occ
-    print "avg CPI: ", np.average(CPIs), "expected: ~", expect_avg_cpi
-    print "avg CWP: ", np.average(CWPs), "expected: ~", expect_avg_cwp
-    print "avg MWP: ", np.average(MWPs), "expected: ~", expect_avg_mwp
+    print "\nexpected time (approx): ", expected
+    print "\n\tactual (avg)\texpected (avg)\trel err"
+    print "occ:\t%f\t%f\t%f" % (np.average(occupancies), expect_avg_occ, 
+                    (np.average(occupancies)-expect_avg_occ)/expect_avg_occ)
+    print "CPI:\t%f\t%f\t%f" % (np.average(CPIs), expect_avg_cpi, 
+                    (np.average(CPIs)-expect_avg_cpi)/expect_avg_cpi)
+    print "CWP:\t%f\t%f\t%f" % (np.average(CWPs), expect_avg_cwp, 
+                    (np.average(CWPs)-expect_avg_cwp)/expect_avg_cwp)
+    print "MWP:\t%f\t%f\t%f" % (np.average(MWPs), expect_avg_mwp, 
+                    (np.average(MWPs)-expect_avg_mwp)/expect_avg_mwp)
+    print ""
     '''
     plt.figure("blackscholes")
     plt.title("blackscholes")
     plt.plot(threads, times, 'b*')
     axes = plt.gca()
     axes.set_ylim([0, 78])
+    plt.show()
+    '''
+    #assert 1 == 0
+    #assert (abs(model.compute_total_cycles() - expected) / expected) < TOLERANCE
+
+
+def test_HK_linear():
+
+    print "TESTING linear..."
+
+    # input size: 10000x10000
+    n = 10000.
+    gstats = GPUStats('FX5600')
+    kstats = KernelStats(111, 30, 0, 0)  # TODO synch_insns=0 ?
+    expected = 775
+
+    trials = 9
+    threads = [(x*2+6)*(x*2+6) for x in range(trials)]
+    active_blocks = [8, 8, 4, 2, 2, 2, 1, 1, 1]
+    #active_blocks = [8, 8, 4, 4, 2, 2, 2, 1, 1]
+    times = []
+    occupancies = []
+    CPIs = []
+    CWPs = []
+    MWPs = []
+    print "blk sz\tactive\tocc\t\tcwp\t\tmwp\t\tcpi\t\ttime"
+    for i in range(trials):
+        tconfig = ThreadConfig(threads[i], (math.ceil(n/(threads[i]**0.5))**2)/2.0)
+        #print " ", n*n/threads[i], math.ceil(n/(threads[i]**0.5))**2, n
+        model = PerfModel(gstats, kstats, tconfig,
+                        np.dtype(np.float32), active_blocks=active_blocks[i])
+        times.append(model.compute_total_cycles() /
+                    (gstats.sm_clock_freq*(10**9))*(10**3))
+        occupancies.append(model.occ)
+        CPIs.append(model.CPI)
+        CWPs.append(model.CWP)
+        MWPs.append(model.MWP)
+        print "%i\t%i\t%f\t%f\t%f\t%f\t%f" % (threads[i], active_blocks[i],
+                                              occupancies[i], CWPs[i], MWPs[i],
+                                              CPIs[i], times[i])
+
+    expect_avg_occ = 0.59
+    expect_avg_cpi = 73
+    expect_avg_cwp = 14
+    expect_avg_mwp = 2
+
+    print "\nexpected time (approx): ", expected
+    print "\n\tactual (avg)\texpected (avg)\trel err"
+    print "occ:\t%f\t%f\t%f" % (np.average(occupancies), expect_avg_occ, 
+                    (np.average(occupancies)-expect_avg_occ)/expect_avg_occ)
+    print "CPI:\t%f\t%f\t%f" % (np.average(CPIs), expect_avg_cpi, 
+                    (np.average(CPIs)-expect_avg_cpi)/expect_avg_cpi)
+    print "CWP:\t%f\t%f\t%f" % (np.average(CWPs), expect_avg_cwp, 
+                    (np.average(CWPs)-expect_avg_cwp)/expect_avg_cwp)
+    print "MWP:\t%f\t%f\t%f" % (np.average(MWPs), expect_avg_mwp, 
+                    (np.average(MWPs)-expect_avg_mwp)/expect_avg_mwp)
+    print ""
+    '''
+    plt.figure("linear")
+    plt.title("linear")
+    plt.plot(threads, times, 'b*')
+    axes = plt.gca()
+    axes.set_ylim([0, 1600])
     plt.show()
     '''
     #assert 1 == 0
@@ -222,7 +239,7 @@ def test_HK_SVM():
     print "blk sz\tactive\tocc\t\tcwp\t\tmwp\t\tcpi\t\ttime"
     for i in range(trials):
         tconfig = ThreadConfig(threads[i],
-                    math.ceil(n1/(threads[i]**0.5))*math.ceil(n2/(threads[i]**0.5)))
+                    math.ceil(n1/(threads[i]**0.5))*math.ceil(n2/(threads[i]**0.5))/4.0)
         model = PerfModel(gstats, kstats, tconfig,
                         np.dtype(np.float32), active_blocks=active_blocks[i])
         times.append(model.compute_total_cycles() /
@@ -240,11 +257,17 @@ def test_HK_SVM():
     expect_avg_cwp = 9
     expect_avg_mwp = 12
 
-    print "expected time (approx): ", expected
-    print "avg occ: ", np.average(occupancies), "expected: ~", expect_avg_occ
-    print "avg CPI: ", np.average(CPIs), "expected: ~", expect_avg_cpi
-    print "avg CWP: ", np.average(CWPs), "expected: ~", expect_avg_cwp
-    print "avg MWP: ", np.average(MWPs), "expected: ~", expect_avg_mwp
+    print "\nexpected time (approx): ", expected
+    print "\n\tactual (avg)\texpected (avg)\trel err"
+    print "occ:\t%f\t%f\t%f" % (np.average(occupancies), expect_avg_occ, 
+                    (np.average(occupancies)-expect_avg_occ)/expect_avg_occ)
+    print "CPI:\t%f\t%f\t%f" % (np.average(CPIs), expect_avg_cpi, 
+                    (np.average(CPIs)-expect_avg_cpi)/expect_avg_cpi)
+    print "CWP:\t%f\t%f\t%f" % (np.average(CWPs), expect_avg_cwp, 
+                    (np.average(CWPs)-expect_avg_cwp)/expect_avg_cwp)
+    print "MWP:\t%f\t%f\t%f" % (np.average(MWPs), expect_avg_mwp, 
+                    (np.average(MWPs)-expect_avg_mwp)/expect_avg_mwp)
+    print ""
     '''
     plt.figure("svm")
     plt.title("svm")
@@ -258,8 +281,8 @@ def test_HK_SVM():
 
 test_HK_example()
 test_HK_sepia()
-test_HK_linear()
 test_HK_blackscholes()
+test_HK_linear()
 test_HK_SVM()
 '''
 if __name__ == "__main__":
