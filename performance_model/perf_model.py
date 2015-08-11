@@ -33,7 +33,6 @@ THE SOFTWARE.
 
 import math
 
-NO_DISCRETE = False
 
 class GPUStats(object):
 
@@ -172,24 +171,14 @@ class PerfModel(object):
 
         # Determine number of active SMs
         # active_SMs == SM_count, unless we have a very small number of blocks
-        if NO_DISCRETE:
-            self.active_SMs = min(
-                                thread_config.blocks/self.active_blocks_per_SM,
-                                GPU_stats.SM_count)
-        else:
-            self.active_SMs = min(math.ceil(
-                                thread_config.blocks/self.active_blocks_per_SM),
-                                GPU_stats.SM_count)  # TODO floor or ceil?
+        self.active_SMs = min(math.ceil(
+                            thread_config.blocks/self.active_blocks_per_SM),
+                            GPU_stats.SM_count)  # TODO floor or ceil?
 
         # Calculate number of active warps per SM
-        if NO_DISCRETE:
-            self.active_warps_per_SM = self.active_blocks_per_SM*(
-                                        thread_config.threads_per_block /
-                                        GPU_stats.threads_per_warp)
-        else:
-            self.active_warps_per_SM = self.active_blocks_per_SM*math.ceil(
-                                        thread_config.threads_per_block /
-                                        GPU_stats.threads_per_warp)
+        self.active_warps_per_SM = self.active_blocks_per_SM*math.ceil(
+                                    thread_config.threads_per_block /
+                                    GPU_stats.threads_per_warp)
 
 
     def compute_total_cycles(self):
@@ -240,12 +229,8 @@ class PerfModel(object):
         n = self.active_warps_per_SM
 
         # how many times does an SM execute active_blocks_per_SM blocks?
-        if NO_DISCRETE:
-            reps_per_SM = self.thread_config.blocks/(
-                        self.active_blocks_per_SM * self.active_SMs)
-        else:
-            reps_per_SM = math.ceil(self.thread_config.blocks/(
-                        self.active_blocks_per_SM * self.active_SMs))
+        reps_per_SM = math.ceil(self.thread_config.blocks/(
+                    self.active_blocks_per_SM * self.active_SMs))
         # TODO added ceil above^, is that right?
         #print " ", reps_per_SM, self.thread_config.blocks, self.active_blocks_per_SM, self.active_SMs
 
@@ -279,7 +264,6 @@ class PerfModel(object):
 
         # CWP cannot be greater than the max number of active warps per SM
         self.CWP = min(cwp_full, n)
-
         if (self.MWP == n) and (self.CWP == n):
             exec_cycles_app = (mem_cycles + comp_cycles +
                               comp_cycles/self.kernel_stats.mem_insns_total *
@@ -295,21 +279,22 @@ class PerfModel(object):
             exec_cycles_app = (mem_l + comp_cycles * n)*reps_per_SM
 
         # compute cost of synchronization instructions
-        synch_cost = departure_delay * (self.MWP-1) *  \
-                     self.kernel_stats.synch_instructions * \
-                     self.active_blocks_per_SM*reps_per_SM
+        synch_cost_old = departure_delay * (self.MWP-1) *  \
+                         self.kernel_stats.synch_instructions * \
+                         self.active_blocks_per_SM*reps_per_SM
+        active_warps_per_block = math.ceil(self.thread_config.threads_per_block /
+                                 self.GPU_stats.threads_per_warp)
+        # NpWB = num. parallel warps per block (introduced in HK tech report?)
+        NpWB = min(self.MWP, active_warps_per_block)
+        synch_cost = departure_delay * (NpWB-1) *  \
+                         self.kernel_stats.synch_instructions * \
+                         self.active_blocks_per_SM*reps_per_SM
 
         # compute CPI (cycles per instruction) just to see what it is
-        if NO_DISCRETE:
-            self.CPI = exec_cycles_app/(self.kernel_stats.total_instructions *
-                       (self.thread_config.threads_per_block /
-                        self.GPU_stats.threads_per_warp) *
-                       (self.thread_config.blocks/self.active_SMs))
-        else:
-            self.CPI = exec_cycles_app/(self.kernel_stats.total_instructions *
-                       math.ceil(self.thread_config.threads_per_block /
-                        self.GPU_stats.threads_per_warp) *
-                       (self.thread_config.blocks/self.active_SMs))
+        self.CPI = exec_cycles_app/(self.kernel_stats.total_instructions *
+                   math.ceil(self.thread_config.threads_per_block /
+                    self.GPU_stats.threads_per_warp) *
+                   (self.thread_config.blocks/self.active_SMs))
         # TODO added ceil^, is this right?
         self.occ = n*(self.GPU_stats.threads_per_warp /
                       self.GPU_stats.max_threads_per_SM)
