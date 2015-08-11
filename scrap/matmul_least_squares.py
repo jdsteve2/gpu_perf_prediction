@@ -151,20 +151,23 @@ print("Least Squares singular values:\n", s)
 print("="*40+"TIMING RESULTS")
 print("n\tBx\tBy\tactual\t\tpredicted\terror\t\tlstsq\t\terror")
 rel_error = []
+rel_error_lstsq = []
 for i in range(trials_n):
     rel_error.append([])
+    rel_error_lstsq.append([])
     for j in range(len(configs_t)):
         predicted = predicted_times[i*len(configs_t)+j]
+        predicted_lstsq = np.dot(lstsq_A[i*len(configs_t)+j], result_lstsq)
         actual = actual_times[i*len(configs_t)+j]
         rel_error[i].append((predicted-actual)/actual)
-        # least squares
-        predicted_lstsq = np.dot(lstsq_A[i*len(configs_t)+j], result_lstsq)
+        rel_error_lstsq[i].append((predicted_lstsq-actual)/actual)
         print("%i\t%i\t%i\t%f\t%f\t%f\t%f\t%f" %
                             (nvals[i], configs_t[j][0], configs_t[j][1],
                             actual, predicted, rel_error[i][-1], predicted_lstsq,
-                            (predicted_lstsq-actual)/actual))
+                            rel_error_lstsq[i][-1]))
 
-print("\n\t", end='')
+print("\nHong Kim relative error:")
+print("\t", end='')
 for config in configs_t:
     print("(%i,%i)\t\t" % (config[0], config[1]), end='')
 print("")
@@ -174,4 +177,14 @@ for i in range(trials_n):
         print("%f\t" % (rel_error[i][j]), end='')
     print("")
 
+print("\nLeast squares relative error:")
+print("\t", end='')
+for config in configs_t:
+    print("(%i,%i)\t\t" % (config[0], config[1]), end='')
+print("")
+for i in range(trials_n):
+    print("%i\t" % (nvals[i]), end='')
+    for j in range(len(configs_t)):
+        print("%f\t" % (rel_error_lstsq[i][j]), end='')
+    print("")
 
