@@ -109,12 +109,11 @@ evt.wait()
 
 gstats = GPUStats('TeslaK20')
 total_blocks = math.ceil(n/(BLOCKSIZE*unroll))
-total_threads = total_blocks*BLOCKSIZE
-kstats = KernelStats(flops/total_threads, f32uncoal/total_threads,
-                     f32coal/total_threads, barrier_count)
+kstats = KernelStats(flops/(n/unroll), f32uncoal/(n/unroll),
+                     f32coal/(n/unroll), barrier_count, 20, 0)
 tconfig = ThreadConfig(BLOCKSIZE, total_blocks)
 
-model = PerfModel(gstats, kstats, tconfig, np.dtype(np.float32), active_blocks=8)
+model = PerfModel(gstats, kstats, tconfig, np.dtype(np.float32))
 cycles = model.compute_total_cycles()
 print "actual runtime: ", (evt.profile.END - evt.profile.START)*1e-9
 print "total predicted time: ", cycles/(gstats.sm_clock_freq*10**9)
