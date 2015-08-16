@@ -84,7 +84,7 @@ def test_HK_sepia():
     plt.plot(threads, times, 'b*')
     axes = plt.gca()
     axes.set_ylim([0, 330])
-    plt.show()
+    #plt.show()
     '''
     #assert 1 == 0
 
@@ -145,7 +145,7 @@ def test_HK_blackscholes():
     plt.plot(threads, times, 'b*')
     axes = plt.gca()
     axes.set_ylim([0, 78])
-    plt.show()
+    #plt.show()
     '''
     #assert 1 == 0
     #assert (abs(model.compute_total_cycles() - expected) / expected) < TOLERANCE
@@ -206,8 +206,8 @@ def test_HK_linear():
     plt.title("linear")
     plt.plot(threads, times, 'b*')
     axes = plt.gca()
-    axes.set_ylim([0, 1600])
-    plt.show()
+    axes.set_ylim([0, 1395])
+    #plt.show()
     '''
     #assert 1 == 0
     #assert (abs(model.compute_total_cycles() - expected) / expected) < TOLERANCE
