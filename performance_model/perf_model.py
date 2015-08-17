@@ -302,10 +302,10 @@ class PerfModel(object):
         n = self.active_warps_per_SM
 
         # how many times does an SM execute active_blocks_per_SM blocks?
-        reps_per_SM = math.ceil(self.thread_config.blocks/(
+        self.reps_per_SM = math.ceil(self.thread_config.blocks/(
                     self.active_blocks_per_SM * self.active_SMs))
         # TODO added ceil above^, is that right?
-        #print " ", reps_per_SM, self.thread_config.blocks, self.active_blocks_per_SM, self.active_SMs
+        #print " ", self.reps_per_SM, self.thread_config.blocks, self.active_blocks_per_SM, self.active_SMs
 
         # bandwidth per warp (GB/second)
         bw_per_warp = self.GPU_stats.sm_clock_freq * \
@@ -340,28 +340,28 @@ class PerfModel(object):
         if (self.MWP == n) and (self.CWP == n):
             exec_cycles_app = (mem_cycles + comp_cycles +
                               comp_cycles/self.kernel_stats.mem_insns_total *
-                              (self.MWP-1))*reps_per_SM
+                              (self.MWP-1))*self.reps_per_SM
         elif (self.CWP >= self.MWP) or (comp_cycles > mem_cycles):
             exec_cycles_app = (mem_cycles * n/self.MWP +
                               comp_cycles/self.kernel_stats.mem_insns_total *
-                              (self.MWP-1))*reps_per_SM
+                              (self.MWP-1))*self.reps_per_SM
             #print "<debugging> ", mem_cycles, n, self.MWP
             #print "<debugging> ", comp_cycles, self.kernel_stats.mem_insns_total,
-            #print "<debugging> ", self.MWP, reps_per_SM
+            #print "<debugging> ", self.MWP, self.reps_per_SM
         else:  # (self.MWP > self.CWP)
-            exec_cycles_app = (mem_l + comp_cycles * n)*reps_per_SM
+            exec_cycles_app = (mem_l + comp_cycles * n)*self.reps_per_SM
 
         # compute cost of synchronization instructions
         synch_cost_old = departure_delay * (self.MWP-1) *  \
                          self.kernel_stats.synch_instructions * \
-                         self.active_blocks_per_SM*reps_per_SM
+                         self.active_blocks_per_SM*self.reps_per_SM
         active_warps_per_block = math.ceil(self.thread_config.threads_per_block /
                                  self.GPU_stats.threads_per_warp)
         # NpWB = num. parallel warps per block (introduced in HK tech report?)
         NpWB = min(self.MWP, active_warps_per_block)
         synch_cost = departure_delay * (NpWB-1) *  \
                          self.kernel_stats.synch_instructions * \
-                         self.active_blocks_per_SM*reps_per_SM
+                         self.active_blocks_per_SM*self.reps_per_SM
 
         # compute CPI (cycles per instruction) just to see what it is
         self.CPI = exec_cycles_app/(self.kernel_stats.total_instructions *
@@ -396,7 +396,7 @@ class PerfModel(object):
         print "<debug> mem_cycles: ", mem_cycles
         print "<debug> CWP_full: ", cwp_full
         print "<debug> CWP: ", self.CWP
-        print "<debug> rep: ", reps_per_SM
+        print "<debug> rep: ", self.reps_per_SM
         print "<debug> exec_cycles_app: ", exec_cycles_app
         print "<debug> synch_cost: ", synch_cost
         print "<debug> CPI: ", self.CPI

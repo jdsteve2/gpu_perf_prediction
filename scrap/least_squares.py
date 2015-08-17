@@ -60,27 +60,8 @@ def main():
 
     # least squares calcualtions
     if run_mm or run_axpy or run_tp :
-        result_lstsq, resid, q, q = np.linalg.lstsq(lstsq_A, lstsq_y)
+        lstsq_weights, resid, q, q = np.linalg.lstsq(lstsq_A, lstsq_y)
         U, s, V = np.linalg.svd(lstsq_A, full_matrices=False)
-
-        print("Least Squares Residual:\n", np.dot(lstsq_A, result_lstsq)-lstsq_y)
-        print("Least Squares singular values:\n", s)
-        print("="*40+"TIMING RESULTS")
-        print("i\tactual\t\tpredicted\terror\t\tlstsq\t\terror")
-
-        rel_error = []
-        rel_error_lstsq = []
-        for i in range(len(actual_times)):
-            predicted = predicted_times_HK[i]
-            predicted_lstsq = np.dot(lstsq_A[i], result_lstsq)
-            actual = actual_times[i]
-            rel_error.append((predicted-actual)/actual)
-            rel_error_lstsq.append((predicted_lstsq-actual)/actual)
-            print("%i\t%f\t%f\t%f\t%f\t%f" % (i, actual, predicted, rel_error[i],
-                                              predicted_lstsq, rel_error_lstsq[i]))
-
-        print("avg relative error HK: ", np.average(rel_error)) 
-        print("avg relative error LS: ", np.average(rel_error_lstsq))
 
         cos_angles = []
         for row1 in range(len(actual_times)):
@@ -89,7 +70,43 @@ def main():
                 cos_angles.append(cos_angle_btw(lstsq_A[row1], lstsq_A[row2]))
                 #print(row1, row2, cos_angles[-1])
 
+        print("Least Squares Residual:\n", np.dot(lstsq_A, lstsq_weights)-lstsq_y)
+        print("Least Squares singular values:\n", s)
+        print("="*40+"TIMING RESULTS")
+
+        '''
+        print("i\tactual\t\tpredicted\terror\t\tlstsq\t\terror")
+
+        rel_error = []
+        rel_error_lstsq = []
+        for i in range(len(actual_times)):
+            predicted = predicted_times_HK[i]
+            predicted_lstsq = np.dot(lstsq_A[i], lstsq_weights)
+            actual = actual_times[i]
+            rel_error.append((predicted-actual)/actual)
+            rel_error_lstsq.append((predicted_lstsq-actual)/actual)
+            print("%i\t%f\t%f\t%f\t%f\t%f" % (i, actual, predicted, rel_error[i],
+                                              predicted_lstsq, rel_error_lstsq[i]))
+        '''
+        print("i\tactual\t\tlstsq\t\terror")
+        rel_error = []
+        rel_error_lstsq = []
+        for i in range(len(actual_times)):
+            predicted = predicted_times_HK[i]
+            predicted_lstsq = np.dot(lstsq_A[i], lstsq_weights)
+            actual = actual_times[i]
+            rel_error.append((predicted-actual)/actual)
+            rel_error_lstsq.append((predicted_lstsq-actual)/actual)
+            print("%i\t%f\t%f\t%f" % (i, actual, predicted_lstsq,
+                                      rel_error_lstsq[i]))
+        print("avg relative error HK: ", np.average(rel_error)) 
+        print("avg relative error LS: ", np.average(rel_error_lstsq))
+
         print(np.average(cos_angles))
+
+        print_Ay(lstsq_A, lstsq_y)
+
+        print(lstsq_weights)
 
 def unit_vector(vector):
     """ Returns the unit vector of the vector.  """
@@ -109,6 +126,16 @@ def print_ptx_src_msg(knl_name):
     print("For example, with compute capability 3.5, do:")
     print("ptxas -v --gpu-name sm_35 "+knl_name+".ptx")
     print("="*40)
+
+def print_Ay(A, y):
+    for row in range(len(A)):
+        for col in range(len(A[0])):
+            #if abs(A[row][col]) > 10**5:
+            if col < 2:
+                print("%.2e\t" % (A[row][col]), end='')
+            else:
+                print("%.2f\t" % (A[row][col]), end='')
+        print("| %f" % (y[row]))
 
 def run_mm_trials(ctx, queue):
 
@@ -226,17 +253,14 @@ def run_mm_trials(ctx, queue):
             print "="*40
             '''
 
-            A.append([n*n,
-                      total_blocks,
-                      BSIZEx*BSIZEy,
-                      1.0/model.active_blocks_per_SM,
+            A.append([total_blocks,
                       np.dtype(np.float32).itemsize,
                       flops/(n*n),
                       f32uncoal/(n*n),
                       f32coal/(n*n),
                       barrier_ct,
                       reg32_per_thread,
-                      shared_mem_per_block,
+                      model.reps_per_SM*model.active_blocks_per_SM,
                       1.0])
             y.append(actual[-1])
 
@@ -284,11 +308,12 @@ def run_axpy_trials(ctx, queue):
             #print "Correctness check: \n", check
 
             # use ptx src to determine resource usage
+            '''
             cknl = lp.compiled.CompiledKernel(ctx, knl)
             ptx_src = cknl.cl_kernel_info().cl_kernel.program.binaries[0]
             ptx_src_file = open(knl.name+".ptx", 'w')
             ptx_src_file.write(ptx_src)
-
+            '''
             barrier_poly = get_barrier_poly(knl)
             barrier_ct = barrier_poly.eval_with_dict({'n': n})
             op_map = get_op_poly(knl)
@@ -348,17 +373,14 @@ def run_axpy_trials(ctx, queue):
             actual.append((evt.profile.END - evt.profile.START)*1e-9)
             predicted.append(cycles/(gstats.sm_clock_freq*10**9))
 
-            A.append([n,
-                      total_blocks,
-                      BSIZEx*BSIZEy,
-                      1.0/model.active_blocks_per_SM,
+            A.append([total_blocks,
                       np.dtype(np.float32).itemsize,
                       flops*unroll/n,
                       f32uncoal*unroll/n,
                       f32coal*unroll/n,
                       barrier_ct,
                       reg32_per_thread,
-                      shared_mem_per_block,
+                      model.reps_per_SM*model.active_blocks_per_SM,
                       1.0])
             # TODO try adding other items like regs per thread, shared mem, etc
             y.append(actual[-1])
@@ -404,10 +426,12 @@ def run_tp_trials(ctx, queue):
             #print "Correctness check: \n", check
 
             # use ptx src to determine resource usage
+            '''
             cknl = lp.compiled.CompiledKernel(ctx, knl)
             ptx_src = cknl.cl_kernel_info().cl_kernel.program.binaries[0]
             ptx_src_file = open(knl.name+".ptx", 'w')
             ptx_src_file.write(ptx_src)
+            '''
 
             barrier_poly = get_barrier_poly(knl)
             barrier_ct = barrier_poly.eval_with_dict({'n': n})
@@ -462,17 +486,14 @@ def run_tp_trials(ctx, queue):
             actual.append((evt.profile.END - evt.profile.START)*1e-9)
             predicted.append(cycles/(gstats.sm_clock_freq*10**9))
 
-            A.append([n*n,
-                      total_blocks,
-                      BSIZEx*BSIZEy,
-                      1.0/model.active_blocks_per_SM,
+            A.append([total_blocks,
                       np.dtype(np.float32).itemsize,
                       flops/(n*n),
                       f32uncoal/(n*n),
                       f32coal/(n*n),
                       barrier_ct,
                       reg32_per_thread,
-                      shared_mem_per_block,
+                      model.reps_per_SM*model.active_blocks_per_SM,
                       1.0])
             y.append(actual[-1])
 
@@ -486,7 +507,7 @@ rel_error = []
 rel_error_lstsq = []
 for i in range(len(actual_times)):
     predicted = predicted_times_HK[i]
-    predicted_lstsq = np.dot(lstsq_A[i], result_lstsq)
+    predicted_lstsq = np.dot(lstsq_A[i], lstsq_weights)
     actual = actual_times[i]
     rel_error.append((predicted-actual)/actual)
     rel_error_lstsq.append((predicted_lstsq-actual)/actual)
@@ -506,7 +527,7 @@ for i in range(trials_n):
     rel_error_lstsq.append([])
     for j in range(len(configs_t)):
         predicted = predicted_times_HK[i*len(configs_t)+j]
-        predicted_lstsq = np.dot(lstsq_A[i*len(configs_t)+j], result_lstsq)
+        predicted_lstsq = np.dot(lstsq_A[i*len(configs_t)+j], lstsq_weights)
         actual = actual_times[i*len(configs_t)+j]
         rel_error[i].append((predicted-actual)/actual)
         rel_error_lstsq[i].append((predicted_lstsq-actual)/actual)
