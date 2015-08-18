@@ -32,9 +32,11 @@ def main():
     print ctx.get_info(cl.context_info.DEVICES)
     print "="*40
     '''
-
+    trials_n = 4
     if run_mm:
-        A_mm, y_mm, predicted_mm, actual_mm = run_mm_trials(ctx, queue)
+        nvals = [2**(9+x) for x in range(trials_n)]
+        configs_t = [(16, 8), (16, 16), (32, 16)]
+        A_mm, y_mm, predicted_mm, actual_mm = run_mm_trials(ctx, queue, nvals, configs_t)
         for row in range(len(A_mm)):
             lstsq_A.append(A_mm[row])
             lstsq_y.append(y_mm[row])
@@ -43,7 +45,10 @@ def main():
 
     # now train on axpy
     if run_axpy:
-        A_axpy, y_axpy, predicted_axpy, actual_axpy = run_axpy_trials(ctx, queue)
+        nvals = [2**(24+x) for x in range(trials_n)]
+        #configs_t = [(16, 1), (32, 1), (64, 1), (128, 1), (256, 1), (512, 1)]
+        configs_t = [(64, 1), (128, 1), (256, 1), (512, 1)]
+        A_axpy, y_axpy, predicted_axpy, actual_axpy = run_axpy_trials(ctx, queue, nvals, configs_t)
         for row in range(len(A_axpy)):
             lstsq_A.append(A_axpy[row])
             lstsq_y.append(y_axpy[row])
@@ -51,7 +56,9 @@ def main():
             actual_times.append(actual_axpy[row])
 
     if run_tp:
-        A_tp, y_tp, predicted_tp, actual_tp = run_tp_trials(ctx, queue)
+        nvals = [2**(10+x) for x in range(trials_n)]
+        configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
+        A_tp, y_tp, predicted_tp, actual_tp = run_tp_trials(ctx, queue, nvals, configs_t)
         for row in range(len(A_tp)):
             lstsq_A.append(A_tp[row])
             lstsq_y.append(y_tp[row])
@@ -138,16 +145,50 @@ def print_Ay(A, y):
                 print("%e\t" % (A[row][col]), end='')
         print("| %f" % (y[row]))
 
-def run_mm_trials(ctx, queue):
+def get_DRAM_f32_accesses(sub_map, param_dict):
+    f32coal_l = sub_map.dict.get(
+                        (np.dtype(np.float32), 'consecutive', 'load'),
+                        isl.PwQPolynomial('{ 0 }')
+                        ).eval_with_dict(param_dict)
+    f32coal_s = sub_map.dict.get(
+                        (np.dtype(np.float32), 'consecutive', 'store'),
+                        isl.PwQPolynomial('{ 0 }')
+                        ).eval_with_dict(param_dict)
+    f32uncoal_l = sub_map.dict.get(
+                        (np.dtype(np.float32), 'nonconsecutive', 'load'),
+                        isl.PwQPolynomial('{ 0 }')
+                        ).eval_with_dict(param_dict)
+    f32uncoal_s = sub_map.dict.get(
+                        (np.dtype(np.float32), 'nonconsecutive', 'store'),
+                        isl.PwQPolynomial('{ 0 }')
+                        ).eval_with_dict(param_dict)
+    return (f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s)
+
+def get_32b_ops(op_map, param_dict):
+    flops = op_map.dict.get(
+                        np.dtype(np.float32),isl.PwQPolynomial('{ 0 }')
+                        ).eval_with_dict(param_dict)
+    iops = op_map.dict.get(
+                        np.dtype(np.int32),isl.PwQPolynomial('{ 0 }')
+                        ).eval_with_dict(param_dict)
+    return (flops, iops)
+
+def update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s,
+                     barrier_ct, thread_work_units, itemsize, model):
+    A.append([model.reps_per_SM*itemsize*flops/thread_work_units,
+              model.reps_per_SM*itemsize*f32uncoal_l/thread_work_units,
+              model.reps_per_SM*itemsize*f32coal_l/thread_work_units,
+              model.reps_per_SM*itemsize*f32uncoal_s/thread_work_units,
+              model.reps_per_SM*itemsize*f32coal_s/thread_work_units,
+              model.reps_per_SM*barrier_ct])
+
+def run_mm_trials(ctx, queue, nvals, configs_t):
 
     A = []
     y = []
     predicted = []
     actual = []
 
-    trials_n = 4
-    nvals = [2**(9+x) for x in range(trials_n)]
-    configs_t = [(16, 8), (16, 16), (32, 16)]
     #TODO figure out smem usage issue
     for n in nvals:
         a_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=np.float32)
@@ -189,30 +230,13 @@ def run_mm_trials(ctx, queue):
 
             barrier_poly = get_barrier_poly(knl)
             barrier_ct = barrier_poly.eval_with_dict({'n': n})
-            op_map = get_op_poly(knl)
-            flops = op_map.dict[np.dtype(np.float32)].eval_with_dict({'n': n})
-            iops = op_map.dict.get(
-                                np.dtype(np.int32),isl.PwQPolynomial('{ 0 }')
-                                ).eval_with_dict({'n': n})
-            sub_map = get_DRAM_access_poly(knl)  # noqa
 
-            f32coal_l = sub_map.dict.get(
-                                (np.dtype(np.float32), 'consecutive', 'load'),
-                                isl.PwQPolynomial('{ 0 }')
-                                ).eval_with_dict({'n': n})
-            f32coal_s = sub_map.dict.get(
-                                (np.dtype(np.float32), 'consecutive', 'store'),
-                                isl.PwQPolynomial('{ 0 }')
-                                ).eval_with_dict({'n': n})
+            op_map = get_op_poly(knl)
+            flops, iops = get_32b_ops(op_map, {'n': n})
+
+            sub_map = get_DRAM_access_poly(knl)  # noqa
+            f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(sub_map, {'n': n})
             f32coal = f32coal_l + f32coal_s
-            f32uncoal_l = sub_map.dict.get(
-                                (np.dtype(np.float32), 'nonconsecutive', 'load'),
-                                isl.PwQPolynomial('{ 0 }')
-                                ).eval_with_dict({'n': n})
-            f32uncoal_s = sub_map.dict.get(
-                                (np.dtype(np.float32), 'nonconsecutive', 'store'),
-                                isl.PwQPolynomial('{ 0 }')
-                                ).eval_with_dict({'n': n})
             f32uncoal = f32uncoal_l + f32uncoal_s
 
             '''
@@ -253,36 +277,20 @@ def run_mm_trials(ctx, queue):
             print "total predicted execution cycles: ", cycles
             print "="*40
             '''
-            '''
-            A.append([total_blocks,
-                      np.dtype(np.float32).itemsize,
-                      flops/(n*n),
-                      f32uncoal/(n*n),
-                      f32coal/(n*n),
-                      barrier_ct,
-                      reg32_per_thread,
-                      model.reps_per_SM*model.active_blocks_per_SM,
-                      1.0])
-            '''
-            A.append([model.reps_per_SM*np.dtype(np.float32).itemsize*flops/(n*n),
-                      model.reps_per_SM*np.dtype(np.float32).itemsize*f32uncoal/(n*n),
-                      model.reps_per_SM*np.dtype(np.float32).itemsize*f32coal/(n*n),
-                      model.reps_per_SM*barrier_ct])
+            update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
+                             f32uncoal_s, barrier_ct, n*n,
+                             np.dtype(np.float32).itemsize, model)
             y.append(actual[-1])
 
     return (A, y, predicted, actual)
 
-def run_axpy_trials(ctx, queue):
+def run_axpy_trials(ctx, queue, nvals, configs_t):
 
     A = []
     y = []
     predicted = []
     actual = []
 
-    trials_n = 4
-    nvals = [2**(24+x) for x in range(trials_n)]
-    #configs_t = [(16, 1), (32, 1), (64, 1), (128, 1), (256, 1), (512, 1)]
-    configs_t = [(64, 1), (128, 1), (256, 1), (512, 1)]
     #TODO figure out smem usage issue
     for n in nvals:
         x_vec_dev = cl.clrandom.rand(queue, n, dtype=np.float32)
@@ -324,29 +332,13 @@ def run_axpy_trials(ctx, queue):
             barrier_poly = get_barrier_poly(knl)
             barrier_ct = barrier_poly.eval_with_dict({'n': n})
             op_map = get_op_poly(knl)
-            flops = op_map.dict[np.dtype(np.float32)].eval_with_dict({'n': n})
-            iops = op_map.dict.get(
-                                np.dtype(np.int32),isl.PwQPolynomial('{ 0 }')
-                                ).eval_with_dict({'n': n})
+            op_map = get_op_poly(knl)
+
+            flops, iops = get_32b_ops(op_map, {'n': n})
             sub_map = get_DRAM_access_poly(knl)  # noqa
 
-            f32coal_l = sub_map.dict.get(
-                                (np.dtype(np.float32), 'consecutive', 'load'),
-                                isl.PwQPolynomial('{ 0 }')
-                                ).eval_with_dict({'n': n})
-            f32coal_s = sub_map.dict.get(
-                                (np.dtype(np.float32), 'consecutive', 'store'),
-                                isl.PwQPolynomial('{ 0 }')
-                                ).eval_with_dict({'n': n})
+            f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(sub_map, {'n': n})
             f32coal = f32coal_l + f32coal_s
-            f32uncoal_l = sub_map.dict.get(
-                                (np.dtype(np.float32), 'nonconsecutive', 'load'),
-                                isl.PwQPolynomial('{ 0 }')
-                                ).eval_with_dict({'n': n})
-            f32uncoal_s = sub_map.dict.get(
-                                (np.dtype(np.float32), 'nonconsecutive', 'store'),
-                                isl.PwQPolynomial('{ 0 }')
-                                ).eval_with_dict({'n': n})
             f32uncoal = f32uncoal_l + f32uncoal_s
 
             '''
@@ -380,36 +372,19 @@ def run_axpy_trials(ctx, queue):
             actual.append((evt.profile.END - evt.profile.START)*1e-9)
             predicted.append(cycles/(gstats.sm_clock_freq*10**9))
 
-            '''
-            A.append([total_blocks,
-                      np.dtype(np.float32).itemsize,
-                      flops*unroll/n,
-                      f32uncoal*unroll/n,
-                      f32coal*unroll/n,
-                      barrier_ct,
-                      reg32_per_thread,
-                      model.reps_per_SM*model.active_blocks_per_SM,
-                      1.0])
-            '''
-            A.append([model.reps_per_SM*np.dtype(np.float32).itemsize*flops*unroll/(n*n),
-                      model.reps_per_SM*np.dtype(np.float32).itemsize*f32uncoal*unroll/(n*n),
-                      model.reps_per_SM*np.dtype(np.float32).itemsize*f32coal*unroll/(n*n),
-                      model.reps_per_SM*barrier_ct])
-            # TODO try adding other items like regs per thread, shared mem, etc
+            update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
+                             f32uncoal_s, barrier_ct, n*n/unroll,
+                             np.dtype(np.float32).itemsize, model)
             y.append(actual[-1])
 
     return (A, y, predicted, actual)
 
-def run_tp_trials(ctx, queue):
+def run_tp_trials(ctx, queue, nvals, configs_t):
 
     A = []
     y = []
     predicted = []
     actual = []
-
-    trials_n = 4
-    nvals = [2**(10+x) for x in range(trials_n)]
-    configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
 
     for n in nvals:
         a_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=np.float32)
@@ -448,32 +423,13 @@ def run_tp_trials(ctx, queue):
 
             barrier_poly = get_barrier_poly(knl)
             barrier_ct = barrier_poly.eval_with_dict({'n': n})
-            op_map = get_op_poly(knl)
-            flops = op_map.dict.get(
-                                np.dtype(np.float32),isl.PwQPolynomial('{ 0 }')
-                                ).eval_with_dict({'n': n})
-            iops = op_map.dict.get(
-                                np.dtype(np.int32),isl.PwQPolynomial('{ 0 }')
-                                ).eval_with_dict({'n': n})
-            sub_map = get_DRAM_access_poly(knl)  # noqa
 
-            f32coal_l = sub_map.dict.get(
-                                (np.dtype(np.float32), 'consecutive', 'load'),
-                                isl.PwQPolynomial('{ 0 }')
-                                ).eval_with_dict({'n': n})
-            f32coal_s = sub_map.dict.get(
-                                (np.dtype(np.float32), 'consecutive', 'store'),
-                                isl.PwQPolynomial('{ 0 }')
-                                ).eval_with_dict({'n': n})
+            op_map = get_op_poly(knl)
+            flops, iops = get_32b_ops(op_map, {'n': n})
+
+            sub_map = get_DRAM_access_poly(knl)  # noqa
+            f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(sub_map, {'n': n})
             f32coal = f32coal_l + f32coal_s
-            f32uncoal_l = sub_map.dict.get(
-                                (np.dtype(np.float32), 'nonconsecutive', 'load'),
-                                isl.PwQPolynomial('{ 0 }')
-                                ).eval_with_dict({'n': n})
-            f32uncoal_s = sub_map.dict.get(
-                                (np.dtype(np.float32), 'nonconsecutive', 'store'),
-                                isl.PwQPolynomial('{ 0 }')
-                                ).eval_with_dict({'n': n})
             f32uncoal = f32uncoal_l + f32uncoal_s
 
             # execute
@@ -493,26 +449,15 @@ def run_tp_trials(ctx, queue):
                                  barrier_ct, reg32_per_thread, shared_mem_per_block)
             tconfig = ThreadConfig(BSIZEx*BSIZEy, total_blocks)
             model = PerfModel(gstats, kstats, tconfig,
-                            np.dtype(np.float32))  #, active_blocks=active_blks)
+                            np.dtype(np.float32))
             cycles = model.compute_total_cycles()
 
             actual.append((evt.profile.END - evt.profile.START)*1e-9)
             predicted.append(cycles/(gstats.sm_clock_freq*10**9))
-            '''
-            A.append([total_blocks,
-                      np.dtype(np.float32).itemsize,
-                      flops/(n*n),
-                      f32uncoal/(n*n),
-                      f32coal/(n*n),
-                      barrier_ct,
-                      reg32_per_thread,
-                      model.reps_per_SM*model.active_blocks_per_SM,
-                      1.0])
-            '''
-            A.append([model.reps_per_SM*np.dtype(np.float32).itemsize*flops/(n*n),
-                      model.reps_per_SM*np.dtype(np.float32).itemsize*f32uncoal/(n*n),
-                      model.reps_per_SM*np.dtype(np.float32).itemsize*f32coal/(n*n),
-                      model.reps_per_SM*barrier_ct])
+
+            update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
+                             f32uncoal_s, barrier_ct, n*n,
+                             np.dtype(np.float32).itemsize, model)
             y.append(actual[-1])
 
     return (A, y, predicted, actual)
