@@ -97,7 +97,7 @@ def main():
             actual = actual_times[i]
             rel_error.append((predicted-actual)/actual)
             rel_error_lstsq.append((predicted_lstsq-actual)/actual)
-            print("%i\t%f\t%f\t%f" % (i, actual, predicted_lstsq,
+            print("%i\t%.7f\t%.7f\t%.7f" % (i, actual, predicted_lstsq,
                                       rel_error_lstsq[i]))
         print("avg relative error HK: ", np.average(rel_error)) 
         print("avg relative error LS: ", np.average(rel_error_lstsq))
@@ -129,12 +129,13 @@ def print_ptx_src_msg(knl_name):
 
 def print_Ay(A, y):
     for row in range(len(A)):
+        print("%d\t" % (row), end='')
         for col in range(len(A[0])):
             #if abs(A[row][col]) > 10**5:
             if col < 2:
-                print("%.2e\t" % (A[row][col]), end='')
+                print("%e\t" % (A[row][col]), end='')
             else:
-                print("%.2f\t" % (A[row][col]), end='')
+                print("%e\t" % (A[row][col]), end='')
         print("| %f" % (y[row]))
 
 def run_mm_trials(ctx, queue):
@@ -252,7 +253,7 @@ def run_mm_trials(ctx, queue):
             print "total predicted execution cycles: ", cycles
             print "="*40
             '''
-
+            '''
             A.append([total_blocks,
                       np.dtype(np.float32).itemsize,
                       flops/(n*n),
@@ -262,6 +263,11 @@ def run_mm_trials(ctx, queue):
                       reg32_per_thread,
                       model.reps_per_SM*model.active_blocks_per_SM,
                       1.0])
+            '''
+            A.append([model.reps_per_SM*np.dtype(np.float32).itemsize*flops/(n*n),
+                      model.reps_per_SM*np.dtype(np.float32).itemsize*f32uncoal/(n*n),
+                      model.reps_per_SM*np.dtype(np.float32).itemsize*f32coal/(n*n),
+                      model.reps_per_SM*barrier_ct])
             y.append(actual[-1])
 
     return (A, y, predicted, actual)
@@ -275,7 +281,8 @@ def run_axpy_trials(ctx, queue):
 
     trials_n = 4
     nvals = [2**(24+x) for x in range(trials_n)]
-    configs_t = [(16, 1), (32, 1), (64, 1), (128, 1), (256, 1), (512, 1)]
+    #configs_t = [(16, 1), (32, 1), (64, 1), (128, 1), (256, 1), (512, 1)]
+    configs_t = [(64, 1), (128, 1), (256, 1), (512, 1)]
     #TODO figure out smem usage issue
     for n in nvals:
         x_vec_dev = cl.clrandom.rand(queue, n, dtype=np.float32)
@@ -373,6 +380,7 @@ def run_axpy_trials(ctx, queue):
             actual.append((evt.profile.END - evt.profile.START)*1e-9)
             predicted.append(cycles/(gstats.sm_clock_freq*10**9))
 
+            '''
             A.append([total_blocks,
                       np.dtype(np.float32).itemsize,
                       flops*unroll/n,
@@ -382,6 +390,11 @@ def run_axpy_trials(ctx, queue):
                       reg32_per_thread,
                       model.reps_per_SM*model.active_blocks_per_SM,
                       1.0])
+            '''
+            A.append([model.reps_per_SM*np.dtype(np.float32).itemsize*flops*unroll/(n*n),
+                      model.reps_per_SM*np.dtype(np.float32).itemsize*f32uncoal*unroll/(n*n),
+                      model.reps_per_SM*np.dtype(np.float32).itemsize*f32coal*unroll/(n*n),
+                      model.reps_per_SM*barrier_ct])
             # TODO try adding other items like regs per thread, shared mem, etc
             y.append(actual[-1])
 
@@ -485,7 +498,7 @@ def run_tp_trials(ctx, queue):
 
             actual.append((evt.profile.END - evt.profile.START)*1e-9)
             predicted.append(cycles/(gstats.sm_clock_freq*10**9))
-
+            '''
             A.append([total_blocks,
                       np.dtype(np.float32).itemsize,
                       flops/(n*n),
@@ -495,6 +508,11 @@ def run_tp_trials(ctx, queue):
                       reg32_per_thread,
                       model.reps_per_SM*model.active_blocks_per_SM,
                       1.0])
+            '''
+            A.append([model.reps_per_SM*np.dtype(np.float32).itemsize*flops/(n*n),
+                      model.reps_per_SM*np.dtype(np.float32).itemsize*f32uncoal/(n*n),
+                      model.reps_per_SM*np.dtype(np.float32).itemsize*f32coal/(n*n),
+                      model.reps_per_SM*barrier_ct])
             y.append(actual[-1])
 
     return (A, y, predicted, actual)
