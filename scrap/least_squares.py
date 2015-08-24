@@ -12,9 +12,10 @@ from perf_model import GPUStats, KernelStats, ThreadConfig, PerfModel
 import islpy as isl
 import math
 
-run_mm = True
-run_axpy = True
-run_tp = True
+run_mm = False #True
+run_axpy = False #True
+run_tp = False #True
+run_conv = False #True
 
 def main():
     # setup
@@ -32,10 +33,11 @@ def main():
     print ctx.get_info(cl.context_info.DEVICES)
     print "="*40
     '''
-    trials_n = 4
+    trials_n = 1
     if run_mm:
         nvals = [2**(9+x) for x in range(trials_n)]
         configs_t = [(16, 8), (16, 16), (32, 16)]
+        #configs_t = [(8, 8), (16, 16), (32, 32)]
         A_mm, y_mm, predicted_mm, actual_mm = run_mm_trials(ctx, queue, nvals,
                                                             configs_t, "allcoal")
         for row in range(len(A_mm)):
@@ -74,8 +76,20 @@ def main():
             predicted_times_HK.append(predicted_tp[row])
             actual_times_all.append(actual_tp[row])
 
+    if run_conv:
+        """
+        nvals = [2**(10+x) for x in range(trials_n)]
+        #configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
+        configs_t = [(16, 16)]
+        A_conv, y_conv, predicted_conv, actual_conv = run_conv_trials(ctx, queue, nvals, configs_t)
+        for row in range(len(A_conv)):
+            lstsq_A.append(A_conv[row])
+            lstsq_y.append(y_conv[row])
+            predicted_times_HK.append(predicted_conv[row])
+            actual_times_all.append(actual_conv[row])
+        """
     # least squares calculations
-    if run_mm or run_axpy or run_tp :
+    if run_mm or run_axpy or run_tp or run_conv :
 
         Atrain, ytrain, Atest, ytest = split_for_train_test(lstsq_A, lstsq_y)
 
@@ -272,7 +286,8 @@ def run_mm_trials(ctx, queue, nvals, configs_t, version):
             else:
                 1/0
                 # TODO error
-            knl = lp.split_iname(knl, "k", BSIZEy)
+            ksplit = BSIZEy
+            knl = lp.split_iname(knl, "k", ksplit)
             knl = lp.add_prefetch(knl, "a", ["k_inner", "i_inner"])
             knl = lp.add_prefetch(knl, "b", ["j_inner", "k_inner", ])
 
@@ -316,7 +331,7 @@ def run_mm_trials(ctx, queue, nvals, configs_t, version):
 
             gstats = GPUStats('TeslaK20')
             reg32_per_thread = 25
-            shared_mem_per_block = 2*4*BSIZEx*BSIZEy
+            shared_mem_per_block = 4*ksplit*(BSIZEx+BSIZEy)
             total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
             total_threads = total_blocks*BSIZEx*BSIZEy
             kstats = KernelStats(flops/(n*n), f32uncoal/(n*n), f32coal/(n*n),
@@ -325,7 +340,6 @@ def run_mm_trials(ctx, queue, nvals, configs_t, version):
             model = PerfModel(gstats, kstats, tconfig,
                             np.dtype(np.float32))
             cycles = model.compute_total_cycles()
-
             actual.append((evt.profile.END - evt.profile.START)*1e-9)
             predicted.append(cycles/(gstats.sm_clock_freq*10**9))
 
@@ -520,6 +534,105 @@ def run_tp_trials(ctx, queue, nvals, configs_t):
 
     return (A, y, predicted, actual)
 
+def run_conv_trials(ctx, queue, nvals, configs_t):
+
+    A = []
+    y = []
+    predicted = []
+    actual = []
+
+    for n in nvals:
+        dtype = np.float32
+        knl = lp.make_kernel(
+            "{ [iimg, ifeat, icolor, im_x, im_y, f_x, f_y]: \
+                -f_w <= f_x,f_y <= f_w \
+                and 0 <= im_x < im_w and 0 <= im_y < im_h \
+                and 0<=iimg<=nimgs and 0<=ifeat<nfeats and 0<=icolor<ncolors \
+             }",
+            """
+            out[iimg, ifeat, im_x, im_y] = sum((f_x, f_y, icolor), \
+                img[iimg, f_w+im_x-f_x, f_w+im_y-f_y, icolor] \
+                * f[ifeat, f_w+f_x, f_w+f_y, icolor])
+            """,
+            [
+                lp.GlobalArg("f", dtype, shape=lp.auto),
+                lp.GlobalArg("img", dtype, shape=lp.auto),
+                lp.GlobalArg("out", dtype, shape=lp.auto),
+                "..."
+            ],
+            assumptions="f_w>=1 and im_w, im_h >= 2*f_w+1 and nfeats>=1 and nimgs>=0",
+            flags="annotate_inames",
+            defines=dict(ncolors=3),
+            name="conv")
+
+        f_w = 3
+        knl = lp.fix_parameters(knl, f_w=f_w)
+
+        ref_knl = knl
+
+        for BSIZEx, BSIZEy in configs_t:
+
+            knl = ref_knl
+
+            knl = lp.split_iname(knl, "im_x", BSIZEx, outer_tag="g.0", inner_tag="l.0")
+            knl = lp.split_iname(knl, "im_y", BSIZEy, outer_tag="g.1", inner_tag="l.1")
+            knl = lp.tag_inames(knl, dict(ifeat="g.2"))
+            knl = lp.add_prefetch(knl, "f[ifeat,:,:,:]")
+            knl = lp.add_prefetch(knl, "img", "im_x_inner, im_y_inner, f_x, f_y")
+
+            params=dict(im_w=128, im_h=128, f_w=f_w, nfeats=3, nimgs=3)
+
+            check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=True, parameters=params)
+            #print "Correctness check: \n", check
+
+            # use ptx src to determine resource usage
+            #'''
+            cknl = lp.compiled.CompiledKernel(ctx, knl)
+            ptx_src = cknl.cl_kernel_info().cl_kernel.program.binaries[0]
+            ptx_src_file = open(knl.name+".ptx", 'w')
+            ptx_src_file.write(ptx_src)
+            #'''
+
+            barrier_poly = get_barrier_poly(knl)
+            barrier_ct = barrier_poly.eval_with_dict(params)
+
+            op_map = get_op_poly(knl)
+            flops, iops = get_32b_ops(op_map, params)
+
+            sub_map = get_DRAM_access_poly(knl)  # noqa
+            f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(sub_map, params)
+            f32coal = f32coal_l + f32coal_s
+            f32uncoal = f32uncoal_l + f32uncoal_s
+
+            # execute
+            # -------
+            #print "="*40+"TIMING RESULTS"
+            print("running kernel...")
+            #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
+            evt, (out,) = knl(queue,  im_w=128, im_h=128, nfeats=3, nimgs=3)
+            evt.wait()
+            1/00
+            gstats = GPUStats('TeslaK20')
+            reg32_per_thread = 8
+            shared_mem_per_block = 4*BSIZEx*BSIZEy
+            total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
+            total_threads = total_blocks*BSIZEx*BSIZEy
+            kstats = KernelStats(flops/(n*n), f32uncoal/(n*n), f32coal/(n*n),
+                                 barrier_ct, reg32_per_thread, shared_mem_per_block)
+            tconfig = ThreadConfig(BSIZEx*BSIZEy, total_blocks)
+            model = PerfModel(gstats, kstats, tconfig,
+                            np.dtype(np.float32))
+            cycles = model.compute_total_cycles()
+
+            actual.append((evt.profile.END - evt.profile.START)*1e-9)
+            predicted.append(cycles/(gstats.sm_clock_freq*10**9))
+
+            update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
+                             f32uncoal_s, barrier_ct, total_blocks, n*n,
+                             np.dtype(np.float32).itemsize, model)
+            y.append(actual[-1])
+
+    return (A, y, predicted, actual)
 
 """
 print("="*40+"TIMING RESULTS")

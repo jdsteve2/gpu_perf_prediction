@@ -20,8 +20,11 @@ queue = cl.CommandQueue(ctx, properties=cl.command_queue_properties.PROFILING_EN
 predicted_times = []
 actual_times = []
 trials_n = 5
+#trials_n = 1
 nvals = [2**(9+x) for x in range(trials_n)]
 configs_t = [(8, 8, 8), (16, 8, 8), (16, 16, 8), (32, 16, 4), (32, 32, 2)]
+#nvals = [2**(9+x) for x in range(trials_n)]
+#configs_t = [(16, 8, 8)]
 #n = 2**10
 for n in nvals:
     a_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=np.float32)
@@ -44,15 +47,15 @@ for n in nvals:
     ref_knl = knl
 
     for BSIZEx, BSIZEy, active_blks in configs_t:
-
+        ksplit = 16
         knl = ref_knl
         knl = lp.split_iname(knl, "i", BSIZEy, outer_tag="g.0", inner_tag="l.1")
         knl = lp.split_iname(knl, "j", BSIZEx, outer_tag="g.1", inner_tag="l.0")
-        knl = lp.split_iname(knl, "k", BSIZEy)
+        knl = lp.split_iname(knl, "k", ksplit)#int(math.ceil(n/BSIZEx)))
         knl = lp.add_prefetch(knl, "a", ["k_inner", "i_inner"])
-        knl = lp.add_prefetch(knl, "b", ["j_inner", "k_inner", ])
+        knl = lp.add_prefetch(knl, "b", ["j_inner", "k_inner"])
 
-        #check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=True)
+        #check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=False)
         #print "Correctness check: \n", check
 
 
