@@ -264,13 +264,18 @@ class PerfModel(object):
         # time (cycles) per warp spent on coalesced mem transactions
         mem_l_coal = self.GPU_stats.roundtrip_DRAM_access_latency
 
-        # percent of mem transactions that are uncoalesced
-        weight_uncoal = self.kernel_stats.mem_instructions_uncoal/(
-                        self.kernel_stats.mem_insns_total)
+        if self.kernel_stats.mem_insns_total != 0:
 
-        # percent of mem transactions that are coalesced
-        weight_coal = self.kernel_stats.mem_instructions_coal/(
-                        self.kernel_stats.mem_insns_total)
+            # percent of mem transactions that are uncoalesced
+            weight_uncoal = self.kernel_stats.mem_instructions_uncoal/(
+                            self.kernel_stats.mem_insns_total)
+
+            # percent of mem transactions that are coalesced
+            weight_coal = self.kernel_stats.mem_instructions_coal/(
+                          self.kernel_stats.mem_insns_total)
+        else:
+            weight_uncoal = 0.
+            weight_coal = 0.
 
         # weighted average of mem latency (cycles) per warp
         mem_l = mem_l_uncoal * weight_uncoal + mem_l_coal * weight_coal
@@ -282,12 +287,15 @@ class PerfModel(object):
                           weight_uncoal + self.GPU_stats.departure_del_coal * \
                           weight_coal
 
-        # "If the number of active warps is less than MWP_Without_BW_full,
-        # the processor does not have enough number of warps to utilize
-        # memory level parallelism"
-        #print " ", mem_l, departure_delay, mem_l/departure_delay
-        mwp_without_bw_full = mem_l/departure_delay
-        #mwp_without_bw_full = round(mwp_without_bw_full, 2)
+        if departure_delay != 0:
+            # "If the number of active warps is less than MWP_Without_BW_full,
+            # the processor does not have enough number of warps to utilize
+            # memory level parallelism"
+            mwp_without_bw_full = mem_l/departure_delay
+            #mwp_without_bw_full = round(mwp_without_bw_full, 2)
+        else:
+            mwp_without_bw_full = 0
+
         mwp_without_bw = min(mwp_without_bw_full, self.active_warps_per_SM)
 
         # memory cycles per warp
@@ -302,20 +310,30 @@ class PerfModel(object):
         n = self.active_warps_per_SM
 
         # how many times does an SM execute active_blocks_per_SM blocks?
-        self.reps_per_SM = math.ceil(self.thread_config.blocks/(
-                    self.active_blocks_per_SM * self.active_SMs))
-        # TODO added ceil above^, is that right?
+        if self.active_blocks_per_SM != 0 and self.active_SMs != 0:
+            self.reps_per_SM = math.ceil(self.thread_config.blocks/(
+                        self.active_blocks_per_SM * self.active_SMs))
+            # TODO added ceil above^, is that right?
+        else:
+            self.reps_per_SM = 0
+
         #print " ", self.reps_per_SM, self.thread_config.blocks, self.active_blocks_per_SM, self.active_SMs
 
         # bandwidth per warp (GB/second)
-        bw_per_warp = self.GPU_stats.sm_clock_freq * \
-                      self.load_bytes_per_warp/mem_l
-        #bw_per_warp = round(bw_per_warp, 3)
+        if mem_l != 0:
+            bw_per_warp = self.GPU_stats.sm_clock_freq * \
+                          self.load_bytes_per_warp/mem_l
+            #bw_per_warp = round(bw_per_warp, 3)
+        else:
+            bw_per_warp = 0
 
         # max memory warp parallelism (warps/SM) based on peak mem bandwidth
-        mwp_peak_bw = self.GPU_stats.mem_bandwidth/(
-                      bw_per_warp * self.active_SMs)
-        #mwp_peak_bw = round(mwp_peak_bw, 2)
+        if bw_per_warp != 0 and self.active_SMs != 0:
+            mwp_peak_bw = self.GPU_stats.mem_bandwidth/(
+                          bw_per_warp * self.active_SMs)
+            #mwp_peak_bw = round(mwp_peak_bw, 2)
+        else:
+            mwp_peak_bw = 0
 
         # Memory Warp Parallelism (MWP)
         # MWP: # of memory warps per SM that can be handled during mem_L cycles
@@ -332,19 +350,28 @@ class PerfModel(object):
 
         # total cycles (per warp) / computation cycles (per warp)
         # = max computation warp parallelism
-        cwp_full = (mem_cycles + comp_cycles)/comp_cycles
-        #cwp_full = round(cwp_full, 2)
+        if comp_cycles != 0:
+            cwp_full = (mem_cycles + comp_cycles)/comp_cycles
+            #cwp_full = round(cwp_full, 2)
+        else:
+            cwp_full = 0
 
         # CWP cannot be greater than the max number of active warps per SM
         self.CWP = min(cwp_full, n)
         if (self.MWP == n) and (self.CWP == n):
-            exec_cycles_app = (mem_cycles + comp_cycles +
-                              comp_cycles/self.kernel_stats.mem_insns_total *
-                              (self.MWP-1))*self.reps_per_SM
+            if self.kernel_stats.mem_insns_total != 0:
+                exec_cycles_app = (mem_cycles + comp_cycles +
+                                  comp_cycles/self.kernel_stats.mem_insns_total *
+                                  (self.MWP-1))*self.reps_per_SM
+            else:
+                exec_cycles_app = 0
         elif (self.CWP >= self.MWP) or (comp_cycles > mem_cycles):
-            exec_cycles_app = (mem_cycles * n/self.MWP +
-                              comp_cycles/self.kernel_stats.mem_insns_total *
-                              (self.MWP-1))*self.reps_per_SM
+            if self.kernel_stats.mem_insns_total != 0 and self.MWP != 0:
+                exec_cycles_app = (mem_cycles * n/self.MWP +
+                                  comp_cycles/self.kernel_stats.mem_insns_total *
+                                  (self.MWP-1))*self.reps_per_SM
+            else:
+                exec_cycles_app = 0
             #print "<debugging> ", mem_cycles, n, self.MWP
             #print "<debugging> ", comp_cycles, self.kernel_stats.mem_insns_total,
             #print "<debugging> ", self.MWP, self.reps_per_SM
@@ -364,11 +391,15 @@ class PerfModel(object):
                          self.active_blocks_per_SM*self.reps_per_SM
 
         # compute CPI (cycles per instruction) just to see what it is
-        self.CPI = exec_cycles_app/(self.kernel_stats.total_instructions *
-                   math.ceil(self.thread_config.threads_per_block /
-                    self.GPU_stats.threads_per_warp) *
-                   (self.thread_config.blocks/self.active_SMs))
-        # TODO added ceil^, is this right?
+        if self.GPU_stats.threads_per_warp != 0 and self.active_SMs != 0:
+            self.CPI = exec_cycles_app/(self.kernel_stats.total_instructions *
+                       math.ceil(self.thread_config.threads_per_block /
+                        self.GPU_stats.threads_per_warp) *
+                       (self.thread_config.blocks/self.active_SMs))
+            # TODO added ceil^, is this right?
+        else:
+            self.CPI = 0
+
         self.occ = n*(self.GPU_stats.threads_per_warp /
                       self.GPU_stats.max_threads_per_SM)
         '''
