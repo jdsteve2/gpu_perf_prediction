@@ -12,11 +12,18 @@ from perf_model import GPUStats, KernelStats, ThreadConfig, PerfModel
 import islpy as isl
 import math
 
+run_mm = False #True
+run_axpy = False #True
+run_tp = False #True
+run_conv = False #Not working yet
+run_empt = False ##True
+run_fd = False
+
 run_mm = True
 run_axpy = True
 run_tp = True
-run_conv = False #Not working yet
-run_empt = True
+#run_empt = True
+run_fd = True
 
 def main():
     # setup
@@ -34,19 +41,29 @@ def main():
     print ctx.get_info(cl.context_info.DEVICES)
     print "="*40
     '''
+
     trials_n = 4
+    # calculate constant with empty kernel
+    nvals = [2**(x) for x in range(trials_n*6)]
+    configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
+    A_empt, y_empt, predicted_empt, actual_empt = run_empt_trials(ctx, queue, nvals, configs_t)
+    const = np.average(actual_empt)
     if run_mm:
         nvals = [2**(9+x) for x in range(trials_n)]
-        configs_t = [(16, 8), (16, 16), (32, 16)]
-        #configs_t = [(8, 8), (16, 16), (32, 32)]
+        configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
+        #'''
         A_mm, y_mm, predicted_mm, actual_mm = run_mm_trials(ctx, queue, nvals,
                                                             configs_t, "allcoal")
+        update_results(lstsq_A, A_mm, lstsq_y, y_mm, predicted_times_HK,
+                       predicted_mm, actual_times_all, actual_mm)
+        '''
         for row in range(len(A_mm)):
             lstsq_A.append(A_mm[row])
             lstsq_y.append(y_mm[row])
             predicted_times_HK.append(predicted_mm[row])
             actual_times_all.append(actual_mm[row])
-
+        '''
+        '''
         A_mm, y_mm, predicted_mm, actual_mm = run_mm_trials(ctx, queue, nvals,
                                                             configs_t, "partcoal")
         for row in range(len(A_mm)):
@@ -54,29 +71,35 @@ def main():
             lstsq_y.append(y_mm[row])
             predicted_times_HK.append(predicted_mm[row])
             actual_times_all.append(actual_mm[row])
-
+        '''
     # now train on axpy
     if run_axpy:
         nvals = [2**(24+x) for x in range(trials_n)]
         #configs_t = [(16, 1), (32, 1), (64, 1), (128, 1), (256, 1), (512, 1)]
         configs_t = [(64, 1), (128, 1), (256, 1), (512, 1)]
         A_axpy, y_axpy, predicted_axpy, actual_axpy = run_axpy_trials(ctx, queue, nvals, configs_t)
+        update_results(lstsq_A, A_axpy, lstsq_y, y_axpy, predicted_times_HK,
+                       predicted_axpy, actual_times_all, actual_axpy)
+        '''
         for row in range(len(A_axpy)):
             lstsq_A.append(A_axpy[row])
             lstsq_y.append(y_axpy[row])
             predicted_times_HK.append(predicted_axpy[row])
             actual_times_all.append(actual_axpy[row])
-
+        '''
     if run_tp:
         nvals = [2**(10+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
         A_tp, y_tp, predicted_tp, actual_tp = run_tp_trials(ctx, queue, nvals, configs_t)
+        update_results(lstsq_A, A_tp, lstsq_y, y_tp, predicted_times_HK,
+                       predicted_tp, actual_times_all, actual_tp)
+        '''
         for row in range(len(A_tp)):
             lstsq_A.append(A_tp[row])
             lstsq_y.append(y_tp[row])
             predicted_times_HK.append(predicted_tp[row])
             actual_times_all.append(actual_tp[row])
-
+        '''
     if run_conv:
         """
         nvals = [2**(10+x) for x in range(trials_n)]
@@ -94,24 +117,51 @@ def main():
         nvals = [2**(10+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
         A_empt, y_empt, predicted_empt, actual_empt = run_empt_trials(ctx, queue, nvals, configs_t)
+        update_results(lstsq_A, A_empt, lstsq_y, y_empt, predicted_times_HK,
+                       predicted_empt, actual_times_all, actual_empt)
+        '''
         for row in range(len(A_empt)):
             lstsq_A.append(A_empt[row])
             lstsq_y.append(y_empt[row])
             predicted_times_HK.append(predicted_empt[row])
             actual_times_all.append(actual_empt[row])
-
+        '''
+    if run_fd:
+        nvals = [2**(10+x) for x in range(trials_n)]
+        configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
+        A_fd, y_fd, predicted_fd, actual_fd = run_fd_trials(ctx, queue, nvals, configs_t)
+        update_results(lstsq_A, A_fd, lstsq_y, y_fd, predicted_times_HK,
+                       predicted_fd, actual_times_all, actual_fd)
+        '''
+        for row in range(len(A_fd)):
+            lstsq_A.append(A_fd[row])
+            lstsq_y.append(y_fd[row])
+            predicted_times_HK.append(predicted_fd[row])
+            actual_times_all.append(actual_fd[row])
+        '''
 
     # least squares calculations
-    if run_mm or run_axpy or run_tp or run_conv or run_empt:
+    if run_mm or run_axpy or run_tp or run_conv or run_empt or run_fd:
 
+        # subtract const from y for training
+        # (this will be manually inserted into weights)
+        lstsq_y = lstsq_y - const
+
+        # todo, make copies instead of moving pointers?
         Atrain, ytrain, Atest, ytest = split_for_train_test(lstsq_A, lstsq_y)
-
-        '''
-        lstsq_weights, resid, q, q = np.linalg.lstsq(lstsq_A, lstsq_y)
-        U, s, V = np.linalg.svd(lstsq_A, full_matrices=False)
-        '''
         lstsq_weights, resid, q, q = np.linalg.lstsq(Atrain, ytrain)
         U, s, V = np.linalg.svd(Atrain, full_matrices=False)
+
+        # add const back in
+        ytrain = ytrain + const
+        ytest = ytest + const
+        lstsq_y = lstsq_y + const
+        for row in range(len(Atrain)):
+            Atrain[row].append(1.0)
+        for row in range(len(Atest)):
+            Atest[row].append(1.0)
+        lstsq_weights = np.append(lstsq_weights, const)
+
         #  TODO y and actual are same, redundant
         cos_angles = []
         for row1 in range(len(ytrain)):
@@ -159,13 +209,17 @@ def main():
 
         print(np.average(cos_angles))
 
-        print_Ay(lstsq_A, lstsq_y)
+        print_Ay(lstsq_A, lstsq_y + const)
 
         print(lstsq_weights)
 
 def unit_vector(vector):
     """ Returns the unit vector of the vector.  """
-    return vector / np.linalg.norm(vector)
+    norm = np.linalg.norm(vector)
+    if norm == 0:
+        return vector
+    else:
+        return vector / np.linalg.norm(vector)
 
 def cos_angle_btw(v1, v2):
     """ Returns the cosine of angle between vectors 'v1' and 'v2' """
@@ -237,8 +291,17 @@ def update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s,
               multiplier*itemsize*f32coal_s/thread_work_units,
               multiplier*itemsize*abs(f32uncoal_s-f32uncoal_l)/thread_work_units,
               multiplier*itemsize*abs(f32coal_s-f32coal_l)/thread_work_units,
-              multiplier*barrier_ct, #])
-              1.0]) # TODO why is it better without this?
+              multiplier*barrier_ct]), #])
+    #          1.0]) # TODO why is it better without this?
+    # TODO add in constant manually
+
+def update_results(A, A_new, y, y_new, predicted_HK, predicted_HK_new, actual_all,
+                   actual_new):
+    for row in range(len(A_new)):
+        A.append(A_new[row])
+        y.append(y_new[row])
+        predicted_HK.append(predicted_HK_new[row])
+        actual_all.append(actual_new[row])
 
 def split_for_train_test(A, y):
 
@@ -247,20 +310,22 @@ def split_for_train_test(A, y):
     ytrain = []
     ytest = []
 
+    import copy
+
     for row in range(len(A)):
-        #'''
+        '''
         if row % 2 == 0:
-            Atrain.append(A[row])
-            ytrain.append(y[row])
+            Atrain.append(copy.copy(A[row]))
+            ytrain.append(copy.copy(y[row]))
         else:
-            Atest.append(A[row])
-            ytest.append(y[row])
+            Atest.append(copy.copy(A[row]))
+            ytest.append(copy.copy(y[row]))
         '''
-        Atrain.append(A[row])
-        ytrain.append(y[row])
-        Atest.append(A[row])
-        ytest.append(y[row])
-        '''
+        Atrain.append(copy.copy(A[row]))
+        ytrain.append(copy.copy(y[row]))
+        Atest.append(copy.copy(A[row]))
+        ytest.append(copy.copy(y[row]))
+        #'''
     return (Atrain, ytrain, Atest, ytest)
 
 def run_mm_trials(ctx, queue, nvals, configs_t, version):
@@ -723,6 +788,88 @@ def run_empt_trials(ctx, queue, nvals, configs_t):
             y.append(actual[-1])
 
     return (A, y, predicted, actual)
+
+def run_fd_trials(ctx, queue, nvals, configs_t):
+
+    A = []
+    y = []
+    predicted = []
+    actual = []
+
+    for n in nvals:
+        u_mat_dev = cl.clrandom.rand(queue, (n+2, n+2), dtype=np.float32)
+        knl = lp.make_kernel(
+              "{[i,j]: 0<=i,j<n}",
+              "result[i,j] = u[i, j]**2 + -1 + (-4)*u[i + 1, j + 1] \
+                    + u[i + 1 + 1, j + 1] + u[i + 1 + -1, j + 1] \
+                    + u[i + 1, j + 1 + 1] + u[i + 1, j + 1 + -1]",
+              name="finite_diff")
+        knl = lp.add_and_infer_dtypes(knl, {"u": np.float32})
+        ref_knl = knl
+
+        for BSIZEx, BSIZEy in configs_t:
+
+            knl = ref_knl
+            knl = lp.split_iname(knl,
+                    "i", BSIZEx, outer_tag="g.1", inner_tag="l.1")
+            knl = lp.split_iname(knl,
+                    "j", BSIZEy, outer_tag="g.0", inner_tag="l.0")
+            knl = lp.add_prefetch(knl, "u",
+                    ["i_inner", "j_inner"],
+                    fetch_bounding_box=True)
+
+            #check = lp.auto_test_vs_ref(ref_knl, ctx, knl, parameters=dict(n=n), print_code=True)
+            #print "Correctness check: \n", check
+
+            # use ptx src to determine resource usage
+            '''
+            cknl = lp.compiled.CompiledKernel(ctx, knl)
+            ptx_src = cknl.cl_kernel_info().cl_kernel.program.binaries[0]
+            ptx_src_file = open(knl.name+".ptx", 'w')
+            ptx_src_file.write(ptx_src)
+            '''
+            params = {'n': n}
+            barrier_poly = get_barrier_poly(knl)
+            barrier_ct = barrier_poly.eval_with_dict(params)
+
+            op_map = get_op_poly(knl)
+            flops, iops = get_32b_ops(op_map, params)
+
+            sub_map = get_DRAM_access_poly(knl)  # noqa
+            f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(sub_map, params)
+            f32coal = f32coal_l + f32coal_s
+            f32uncoal = f32uncoal_l + f32uncoal_s
+
+            # execute
+            # -------
+            #print "="*40+"TIMING RESULTS"
+            print("running kernel...")
+            #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
+            evt, (out,) = knl(queue, u=u_mat_dev)
+            evt.wait()
+
+            gstats = GPUStats('TeslaK20')
+            reg32_per_thread = 14
+            shared_mem_per_block = 4*(BSIZEx+2)*(BSIZEy+2)
+            total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
+            total_threads = total_blocks*BSIZEx*BSIZEy
+            kstats = KernelStats(flops/(n*n), f32uncoal/(n*n), f32coal/(n*n),
+                                 barrier_ct, reg32_per_thread, shared_mem_per_block)
+            tconfig = ThreadConfig(BSIZEx*BSIZEy, total_blocks)
+            model = PerfModel(gstats, kstats, tconfig,
+                            np.dtype(np.float32))
+            cycles = model.compute_total_cycles()
+
+            actual.append((evt.profile.END - evt.profile.START)*1e-9)
+            predicted.append(cycles/(gstats.sm_clock_freq*10**9))
+
+            update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
+                             f32uncoal_s, barrier_ct, total_blocks, n*n,
+                             np.dtype(np.float32).itemsize, model)
+            y.append(actual[-1])
+
+    return (A, y, predicted, actual)
+
 """
 print("="*40+"TIMING RESULTS")
 print("n\tBx\tBy\tactual\t\tpredicted\terror\t\tlstsq\t\terror")
