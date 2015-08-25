@@ -12,10 +12,11 @@ from perf_model import GPUStats, KernelStats, ThreadConfig, PerfModel
 import islpy as isl
 import math
 
-run_mm = False #True
-run_axpy = False #True
-run_tp = False #True
-run_conv = False #True
+run_mm = True
+run_axpy = True
+run_tp = True
+run_conv = False #Not working yet
+run_empt = True
 
 def main():
     # setup
@@ -33,7 +34,7 @@ def main():
     print ctx.get_info(cl.context_info.DEVICES)
     print "="*40
     '''
-    trials_n = 1
+    trials_n = 4
     if run_mm:
         nvals = [2**(9+x) for x in range(trials_n)]
         configs_t = [(16, 8), (16, 16), (32, 16)]
@@ -88,8 +89,20 @@ def main():
             predicted_times_HK.append(predicted_conv[row])
             actual_times_all.append(actual_conv[row])
         """
+
+    if run_empt:
+        nvals = [2**(10+x) for x in range(trials_n)]
+        configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
+        A_empt, y_empt, predicted_empt, actual_empt = run_empt_trials(ctx, queue, nvals, configs_t)
+        for row in range(len(A_empt)):
+            lstsq_A.append(A_empt[row])
+            lstsq_y.append(y_empt[row])
+            predicted_times_HK.append(predicted_empt[row])
+            actual_times_all.append(actual_empt[row])
+
+
     # least squares calculations
-    if run_mm or run_axpy or run_tp or run_conv :
+    if run_mm or run_axpy or run_tp or run_conv or run_empt:
 
         Atrain, ytrain, Atest, ytest = split_for_train_test(lstsq_A, lstsq_y)
 
@@ -142,6 +155,7 @@ def main():
             print("%i\t%.7f\t%.7f\t%.7f" % (i, actual, predicted, rel_error_HK[i]))
         print("avg relative error HK: ", np.average(np.absolute(rel_error_HK))) 
         print("avg relative error LS: ", np.average(np.absolute(rel_error_lstsq)))
+        print("med relative error LS: ", np.median(np.absolute(rel_error_lstsq)))
 
         print(np.average(cos_angles))
 
@@ -223,7 +237,8 @@ def update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s,
               multiplier*itemsize*f32coal_s/thread_work_units,
               multiplier*itemsize*abs(f32uncoal_s-f32uncoal_l)/thread_work_units,
               multiplier*itemsize*abs(f32coal_s-f32coal_l)/thread_work_units,
-              multiplier*barrier_ct])
+              multiplier*barrier_ct, #])
+              1.0]) # TODO why is it better without this?
 
 def split_for_train_test(A, y):
 
@@ -582,7 +597,7 @@ def run_conv_trials(ctx, queue, nvals, configs_t):
 
             params=dict(im_w=128, im_h=128, f_w=f_w, nfeats=3, nimgs=3)
 
-            check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=True, parameters=params)
+            #check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=True, parameters=params)
             #print "Correctness check: \n", check
 
             # use ptx src to determine resource usage
@@ -634,6 +649,80 @@ def run_conv_trials(ctx, queue, nvals, configs_t):
 
     return (A, y, predicted, actual)
 
+def run_empt_trials(ctx, queue, nvals, configs_t):
+
+    A = []
+    y = []
+    predicted = []
+    actual = []
+
+    for n in nvals:
+        knl = lp.make_kernel(
+                "{[i,j]: 0<=i,j<%d}" % n,
+                [
+                    ""
+                ],
+                name="empty")
+
+        for BSIZEx, BSIZEy in configs_t:
+
+            #check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=True)
+            #print "Correctness check: \n", check
+
+            # use ptx src to determine resource usage
+            '''
+            cknl = lp.compiled.CompiledKernel(ctx, knl)
+            ptx_src = cknl.cl_kernel_info().cl_kernel.program.binaries[0]
+            ptx_src_file = open(knl.name+".ptx", 'w')
+            ptx_src_file.write(ptx_src)
+            '''
+            params = {'n': n}
+            barrier_poly = get_barrier_poly(knl)
+            barrier_ct = barrier_poly.eval_with_dict(params)
+
+            op_map = get_op_poly(knl)
+            flops, iops = get_32b_ops(op_map, params)
+
+            sub_map = get_DRAM_access_poly(knl)  # noqa
+            f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(sub_map, params)
+            f32coal = f32coal_l + f32coal_s
+            f32uncoal = f32uncoal_l + f32uncoal_s
+
+            #print("<debug> ", barrier_ct, flops, iops, f32coal, f32uncoal)
+
+            # execute
+            # -------
+            #print "="*40+"TIMING RESULTS"
+            print("running kernel...")
+            #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
+            evt, out = knl(queue)
+            evt.wait()
+
+            gstats = GPUStats('TeslaK20')
+            reg32_per_thread = 0
+            shared_mem_per_block = 0
+            #total_blocks = 0
+            #total_threads = 0
+            total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
+            total_threads = total_blocks*BSIZEx*BSIZEy
+            # TODO actually increase threads/blocks but expect 0 result
+            kstats = KernelStats(0, 0, 0, barrier_ct, reg32_per_thread,
+                                 shared_mem_per_block)
+            #tconfig = ThreadConfig(0, total_blocks)
+            tconfig = ThreadConfig(BSIZEx*BSIZEy, total_blocks)
+            model = PerfModel(gstats, kstats, tconfig,
+                            np.dtype(np.float32))
+            cycles = model.compute_total_cycles()
+
+            actual.append((evt.profile.END - evt.profile.START)*1e-9)
+            predicted.append(cycles/(gstats.sm_clock_freq*10**9))
+
+            update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
+                             f32uncoal_s, barrier_ct, total_blocks, n*n,
+                             np.dtype(np.float32).itemsize, model)
+            y.append(actual[-1])
+
+    return (A, y, predicted, actual)
 """
 print("="*40+"TIMING RESULTS")
 print("n\tBx\tBy\tactual\t\tpredicted\terror\t\tlstsq\t\terror")
