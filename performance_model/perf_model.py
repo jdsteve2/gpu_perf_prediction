@@ -391,7 +391,8 @@ class PerfModel(object):
                          self.active_blocks_per_SM*self.reps_per_SM
 
         # compute CPI (cycles per instruction) just to see what it is
-        if self.GPU_stats.threads_per_warp != 0 and self.active_SMs != 0:
+        if self.GPU_stats.threads_per_warp != 0 and self.active_SMs != 0 \
+                           and self.kernel_stats.total_instructions != 0:
             self.CPI = exec_cycles_app/(self.kernel_stats.total_instructions *
                        math.ceil(self.thread_config.threads_per_block /
                         self.GPU_stats.threads_per_warp) *
