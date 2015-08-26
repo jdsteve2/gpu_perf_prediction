@@ -11,6 +11,7 @@ sys.path.append("../performance_model")
 from perf_model import GPUStats, KernelStats, ThreadConfig, PerfModel
 import islpy as isl
 import math
+import copy
 
 run_mm = False #True
 run_axpy = False #True
@@ -24,6 +25,8 @@ run_axpy = True
 run_tp = True
 #run_empt = True
 run_fd = True
+
+add_empty_test = True
 
 def main():
     # setup
@@ -43,11 +46,18 @@ def main():
     '''
 
     trials_n = 4
-    # calculate constant with empty kernel
-    nvals = [2**(x) for x in range(trials_n*6)]
+
+    # warm up the gpu
+    nvals = [2**(9+x) for x in range(trials_n)]
     configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
-    A_empt, y_empt, predicted_empt, actual_empt = run_empt_trials(ctx, queue, nvals, configs_t)
-    const = np.average(actual_empt)
+    aa, bb, cc, dd = run_mm_trials(ctx, queue, nvals, configs_t, "allcoal")
+
+    # calculate constant with empty kernel
+    nvals = [int(2**(10+x)) for x in range(trials_n)]
+    configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
+    aaa, bbb, ccc, const_calibration = run_empt_trials(ctx, queue, nvals, configs_t)
+    const = np.average(const_calibration)
+
     if run_mm:
         nvals = [2**(9+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
@@ -57,20 +67,13 @@ def main():
         update_results(lstsq_A, A_mm, lstsq_y, y_mm, predicted_times_HK,
                        predicted_mm, actual_times_all, actual_mm)
         '''
-        for row in range(len(A_mm)):
-            lstsq_A.append(A_mm[row])
-            lstsq_y.append(y_mm[row])
-            predicted_times_HK.append(predicted_mm[row])
-            actual_times_all.append(actual_mm[row])
-        '''
-        '''
         A_mm, y_mm, predicted_mm, actual_mm = run_mm_trials(ctx, queue, nvals,
                                                             configs_t, "partcoal")
         for row in range(len(A_mm)):
-            lstsq_A.append(A_mm[row])
-            lstsq_y.append(y_mm[row])
-            predicted_times_HK.append(predicted_mm[row])
-            actual_times_all.append(actual_mm[row])
+            lstsq_A.append(copy.copy(A_mm[row]))
+            lstsq_y.append(copy.copy(y_mm[row]))
+            predicted_times_HK.append(copy.copy(predicted_mm[row]))
+            actual_times_all.append(copy.copy(actual_mm[row]))
         '''
     # now train on axpy
     if run_axpy:
@@ -80,26 +83,13 @@ def main():
         A_axpy, y_axpy, predicted_axpy, actual_axpy = run_axpy_trials(ctx, queue, nvals, configs_t)
         update_results(lstsq_A, A_axpy, lstsq_y, y_axpy, predicted_times_HK,
                        predicted_axpy, actual_times_all, actual_axpy)
-        '''
-        for row in range(len(A_axpy)):
-            lstsq_A.append(A_axpy[row])
-            lstsq_y.append(y_axpy[row])
-            predicted_times_HK.append(predicted_axpy[row])
-            actual_times_all.append(actual_axpy[row])
-        '''
+
     if run_tp:
         nvals = [2**(10+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
         A_tp, y_tp, predicted_tp, actual_tp = run_tp_trials(ctx, queue, nvals, configs_t)
         update_results(lstsq_A, A_tp, lstsq_y, y_tp, predicted_times_HK,
                        predicted_tp, actual_times_all, actual_tp)
-        '''
-        for row in range(len(A_tp)):
-            lstsq_A.append(A_tp[row])
-            lstsq_y.append(y_tp[row])
-            predicted_times_HK.append(predicted_tp[row])
-            actual_times_all.append(actual_tp[row])
-        '''
     if run_conv:
         """
         nvals = [2**(10+x) for x in range(trials_n)]
@@ -107,10 +97,10 @@ def main():
         configs_t = [(16, 16)]
         A_conv, y_conv, predicted_conv, actual_conv = run_conv_trials(ctx, queue, nvals, configs_t)
         for row in range(len(A_conv)):
-            lstsq_A.append(A_conv[row])
-            lstsq_y.append(y_conv[row])
-            predicted_times_HK.append(predicted_conv[row])
-            actual_times_all.append(actual_conv[row])
+            lstsq_A.append(copy.copy(A_conv[row]))
+            lstsq_y.append(copy.copy(y_conv[row]))
+            predicted_times_HK.append(copy.copy(predicted_conv[row]))
+            actual_times_all.append(copy.copy(actual_conv[row]))
         """
 
     if run_empt:
@@ -119,48 +109,50 @@ def main():
         A_empt, y_empt, predicted_empt, actual_empt = run_empt_trials(ctx, queue, nvals, configs_t)
         update_results(lstsq_A, A_empt, lstsq_y, y_empt, predicted_times_HK,
                        predicted_empt, actual_times_all, actual_empt)
-        '''
-        for row in range(len(A_empt)):
-            lstsq_A.append(A_empt[row])
-            lstsq_y.append(y_empt[row])
-            predicted_times_HK.append(predicted_empt[row])
-            actual_times_all.append(actual_empt[row])
-        '''
     if run_fd:
         nvals = [2**(10+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
         A_fd, y_fd, predicted_fd, actual_fd = run_fd_trials(ctx, queue, nvals, configs_t)
         update_results(lstsq_A, A_fd, lstsq_y, y_fd, predicted_times_HK,
                        predicted_fd, actual_times_all, actual_fd)
-        '''
-        for row in range(len(A_fd)):
-            lstsq_A.append(A_fd[row])
-            lstsq_y.append(y_fd[row])
-            predicted_times_HK.append(predicted_fd[row])
-            actual_times_all.append(actual_fd[row])
-        '''
 
     # least squares calculations
     if run_mm or run_axpy or run_tp or run_conv or run_empt or run_fd:
 
         # subtract const from y for training
         # (this will be manually inserted into weights)
-        lstsq_y = lstsq_y - const
+        lstsq_y[:] = [x - const for x in lstsq_y]
 
-        # todo, make copies instead of moving pointers?
+        # TODO, make copies or move pointers?
         Atrain, ytrain, Atest, ytest = split_for_train_test(lstsq_A, lstsq_y)
         lstsq_weights, resid, q, q = np.linalg.lstsq(Atrain, ytrain)
         U, s, V = np.linalg.svd(Atrain, full_matrices=False)
 
         # add const back in
-        ytrain = ytrain + const
-        ytest = ytest + const
-        lstsq_y = lstsq_y + const
+        ytrain[:] = [x + const for x in ytrain]
+        ytest[:] = [x + const for x in ytest]
+        lstsq_y[:] = [x + const for x in lstsq_y]
+
+        # add empty kernel runs to test even though we didn't train on them
+        if add_empty_test:
+            nvals = [2**(10+x) for x in range(trials_n)]
+            configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
+            A_empt, y_empt, predicted_empt, actual_empt = run_empt_trials(ctx, queue, nvals, configs_t)
+            Atrain_empt, ytrain_empt, Atest_empt, ytest_empt = split_for_train_test(A_empt, y_empt)
+            update_results(Atest, Atest_empt, ytest, ytest_empt, predicted_times_HK,
+                           predicted_empt, actual_times_all, actual_empt)
+            for row in range(len(Atest_empt)):
+                lstsq_A.append(copy.copy(Atest_empt[row]))
+                lstsq_y.append(copy.copy(ytest_empt[row]))
+
+        # add const back
         for row in range(len(Atrain)):
             Atrain[row].append(1.0)
         for row in range(len(Atest)):
             Atest[row].append(1.0)
-        lstsq_weights = np.append(lstsq_weights, const)
+        for row in range(len(lstsq_A)):
+            lstsq_A[row].append(1.0)
+        lstsq_weights = np.append(lstsq_weights, const) #TODO get rid of np
 
         #  TODO y and actual are same, redundant
         cos_angles = []
@@ -190,7 +182,7 @@ def main():
         '''
         print("i\tactual\t\tlstsq\t\terror")
         rel_error_lstsq = []
-        for i in range(len(ytrain)):
+        for i in range(len(ytest)):
             predicted_lstsq = np.dot(Atest[i], lstsq_weights)
             actual = ytest[i]
             rel_error_lstsq.append((predicted_lstsq-actual)/actual)
@@ -209,9 +201,13 @@ def main():
 
         print(np.average(cos_angles))
 
-        print_Ay(lstsq_A, lstsq_y + const)
+        print_Ay(lstsq_A, lstsq_y)
 
-        print(lstsq_weights)
+        print("Weights:")
+        for item in lstsq_weights:
+            print("\t%e" % (item), end='')
+        print()
+        #print(lstsq_weights)
 
 def unit_vector(vector):
     """ Returns the unit vector of the vector.  """
@@ -298,10 +294,10 @@ def update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s,
 def update_results(A, A_new, y, y_new, predicted_HK, predicted_HK_new, actual_all,
                    actual_new):
     for row in range(len(A_new)):
-        A.append(A_new[row])
-        y.append(y_new[row])
-        predicted_HK.append(predicted_HK_new[row])
-        actual_all.append(actual_new[row])
+        A.append(copy.copy(A_new[row]))
+        y.append(copy.copy(y_new[row]))
+        predicted_HK.append(copy.copy(predicted_HK_new[row]))
+        actual_all.append(copy.copy(actual_new[row]))
 
 def split_for_train_test(A, y):
 
@@ -309,8 +305,6 @@ def split_for_train_test(A, y):
     Atest = []
     ytrain = []
     ytest = []
-
-    import copy
 
     for row in range(len(A)):
         #'''
@@ -432,7 +426,7 @@ def run_mm_trials(ctx, queue, nvals, configs_t, version):
             update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(np.float32).itemsize, model)
-            y.append(actual[-1])
+            y.append(copy.copy(actual[-1]))
 
     return (A, y, predicted, actual)
 
@@ -527,7 +521,7 @@ def run_axpy_trials(ctx, queue, nvals, configs_t):
             update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n/unroll,
                              np.dtype(np.float32).itemsize, model)
-            y.append(actual[-1])
+            y.append(copy.copy(actual[-1]))
 
     return (A, y, predicted, actual)
 
@@ -610,7 +604,7 @@ def run_tp_trials(ctx, queue, nvals, configs_t):
             update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(np.float32).itemsize, model)
-            y.append(actual[-1])
+            y.append(copy.copy(actual[-1]))
 
     return (A, y, predicted, actual)
 
@@ -710,7 +704,7 @@ def run_conv_trials(ctx, queue, nvals, configs_t):
             update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(np.float32).itemsize, model)
-            y.append(actual[-1])
+            y.append(copy.copy(actual[-1]))
 
     return (A, y, predicted, actual)
 
@@ -785,7 +779,7 @@ def run_empt_trials(ctx, queue, nvals, configs_t):
             update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(np.float32).itemsize, model)
-            y.append(actual[-1])
+            y.append(copy.copy(actual[-1]))
 
     return (A, y, predicted, actual)
 
@@ -866,7 +860,7 @@ def run_fd_trials(ctx, queue, nvals, configs_t):
             update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(np.float32).itemsize, model)
-            y.append(actual[-1])
+            y.append(copy.copy(actual[-1]))
 
     return (A, y, predicted, actual)
 
