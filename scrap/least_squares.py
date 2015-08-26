@@ -313,7 +313,7 @@ def split_for_train_test(A, y):
     import copy
 
     for row in range(len(A)):
-        '''
+        #'''
         if row % 2 == 0:
             Atrain.append(copy.copy(A[row]))
             ytrain.append(copy.copy(y[row]))
@@ -325,7 +325,7 @@ def split_for_train_test(A, y):
         ytrain.append(copy.copy(y[row]))
         Atest.append(copy.copy(A[row]))
         ytest.append(copy.copy(y[row]))
-        #'''
+        '''
     return (Atrain, ytrain, Atest, ytest)
 
 def run_mm_trials(ctx, queue, nvals, configs_t, version):
