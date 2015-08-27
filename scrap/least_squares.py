@@ -26,6 +26,7 @@ run_tp = True
 #run_empt = True
 run_fd = True
 
+compute_const_manually = True
 add_empty_test = True
 
 def main():
@@ -53,10 +54,11 @@ def main():
     aa, bb, cc, dd = run_mm_trials(ctx, queue, nvals, configs_t, "allcoal")
 
     # calculate constant with empty kernel
-    nvals = [int(2**(10+x)) for x in range(trials_n)]
-    configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
-    aaa, bbb, ccc, const_calibration = run_empt_trials(ctx, queue, nvals, configs_t)
-    const = np.average(const_calibration)
+    if compute_const_manually:
+        nvals = [int(2**(10+x)) for x in range(trials_n)]
+        configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
+        aaa, bbb, ccc, const_calibration = run_empt_trials(ctx, queue, nvals, configs_t)
+        const = np.average(const_calibration)
 
     if run_mm:
         nvals = [2**(9+x) for x in range(trials_n)]
@@ -77,7 +79,7 @@ def main():
         '''
     # now train on axpy
     if run_axpy:
-        nvals = [2**(24+x) for x in range(trials_n)]
+        nvals = [2**(20+x*2) for x in range(trials_n)]
         #configs_t = [(16, 1), (32, 1), (64, 1), (128, 1), (256, 1), (512, 1)]
         configs_t = [(64, 1), (128, 1), (256, 1), (512, 1)]
         A_axpy, y_axpy, predicted_axpy, actual_axpy = run_axpy_trials(ctx, queue, nvals, configs_t)
@@ -103,12 +105,6 @@ def main():
             actual_times_all.append(copy.copy(actual_conv[row]))
         """
 
-    if run_empt:
-        nvals = [2**(10+x) for x in range(trials_n)]
-        configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
-        A_empt, y_empt, predicted_empt, actual_empt = run_empt_trials(ctx, queue, nvals, configs_t)
-        update_results(lstsq_A, A_empt, lstsq_y, y_empt, predicted_times_HK,
-                       predicted_empt, actual_times_all, actual_empt)
     if run_fd:
         nvals = [2**(10+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
@@ -116,12 +112,20 @@ def main():
         update_results(lstsq_A, A_fd, lstsq_y, y_fd, predicted_times_HK,
                        predicted_fd, actual_times_all, actual_fd)
 
+    if run_empt:
+        nvals = [2**(10+x) for x in range(trials_n)]
+        configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
+        A_empt, y_empt, predicted_empt, actual_empt = run_empt_trials(ctx, queue, nvals, configs_t)
+        update_results(lstsq_A, A_empt, lstsq_y, y_empt, predicted_times_HK,
+                       predicted_empt, actual_times_all, actual_empt)
+
     # least squares calculations
     if run_mm or run_axpy or run_tp or run_conv or run_empt or run_fd:
 
         # subtract const from y for training
         # (this will be manually inserted into weights)
-        lstsq_y[:] = [x - const for x in lstsq_y]
+        if compute_const_manually:
+            lstsq_y[:] = [x - const for x in lstsq_y]
 
         # TODO, make copies or move pointers?
         Atrain, ytrain, Atest, ytest = split_for_train_test(lstsq_A, lstsq_y)
@@ -129,11 +133,12 @@ def main():
         U, s, V = np.linalg.svd(Atrain, full_matrices=False)
 
         # add const back in
-        ytrain[:] = [x + const for x in ytrain]
-        ytest[:] = [x + const for x in ytest]
-        lstsq_y[:] = [x + const for x in lstsq_y]
+        if compute_const_manually:
+            ytrain[:] = [x + const for x in ytrain]
+            ytest[:] = [x + const for x in ytest]
+            lstsq_y[:] = [x + const for x in lstsq_y]
 
-        # add empty kernel runs to test even though we didn't train on them
+        # add empty kernel runs to test even if we didn't train on them
         if add_empty_test:
             nvals = [2**(10+x) for x in range(trials_n)]
             configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
@@ -146,13 +151,14 @@ def main():
                 lstsq_y.append(copy.copy(ytest_empt[row]))
 
         # add const back
-        for row in range(len(Atrain)):
-            Atrain[row].append(1.0)
-        for row in range(len(Atest)):
-            Atest[row].append(1.0)
-        for row in range(len(lstsq_A)):
-            lstsq_A[row].append(1.0)
-        lstsq_weights = np.append(lstsq_weights, const) #TODO get rid of np
+        if compute_const_manually:
+            for row in range(len(Atrain)):
+                Atrain[row].append(1.0)
+            for row in range(len(Atest)):
+                Atest[row].append(1.0)
+            for row in range(len(lstsq_A)):
+                lstsq_A[row].append(1.0)
+            lstsq_weights = np.append(lstsq_weights, const) #TODO get rid of np
 
         #  TODO y and actual are same, redundant
         cos_angles = []
@@ -271,7 +277,9 @@ def get_32b_ops(op_map, param_dict):
                         ).eval_with_dict(param_dict)
     return (flops, iops)
 
-def update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s,
+#def update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s,
+#                     barrier_ct, blocks, thread_work_units, itemsize, model):
+def update_LS_matrix(A, flops, intops, f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s,
                      barrier_ct, blocks, thread_work_units, itemsize, model):
 
     reps_per_SM = math.ceil(blocks/(model.active_blocks_per_SM*
@@ -281,6 +289,7 @@ def update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s,
     #multiplier = blocks
     # TODO assumes there are enough blocks to fully load all SMs
     A.append([multiplier*itemsize*flops/thread_work_units,
+              multiplier*itemsize*intops/thread_work_units,
               multiplier*itemsize*f32uncoal_l/thread_work_units,
               multiplier*itemsize*f32coal_l/thread_work_units,
               multiplier*itemsize*f32uncoal_s/thread_work_units,
@@ -288,6 +297,8 @@ def update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s,
               multiplier*itemsize*abs(f32uncoal_s-f32uncoal_l)/thread_work_units,
               multiplier*itemsize*abs(f32coal_s-f32coal_l)/thread_work_units,
               multiplier*barrier_ct]), #])
+    if not compute_const_manually:
+        A[-1].append(1.0)
     #          1.0]) # TODO why is it better without this?
     # TODO add in constant manually
 
@@ -423,7 +434,8 @@ def run_mm_trials(ctx, queue, nvals, configs_t, version):
             print "total predicted execution cycles: ", cycles
             print "="*40
             '''
-            update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
+            #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
+            update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(np.float32).itemsize, model)
             y.append(copy.copy(actual[-1]))
@@ -478,7 +490,6 @@ def run_axpy_trials(ctx, queue, nvals, configs_t):
             barrier_poly = get_barrier_poly(knl)
             barrier_ct = barrier_poly.eval_with_dict({'n': n})
             op_map = get_op_poly(knl)
-            op_map = get_op_poly(knl)
 
             flops, iops = get_32b_ops(op_map, {'n': n})
             sub_map = get_DRAM_access_poly(knl)  # noqa
@@ -518,8 +529,9 @@ def run_axpy_trials(ctx, queue, nvals, configs_t):
             actual.append((evt.profile.END - evt.profile.START)*1e-9)
             predicted.append(cycles/(gstats.sm_clock_freq*10**9))
 
-            update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
-                             f32uncoal_s, barrier_ct, total_blocks, n*n/unroll,
+            #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
+            update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
+                             f32uncoal_s, barrier_ct, total_blocks, n/unroll,
                              np.dtype(np.float32).itemsize, model)
             y.append(copy.copy(actual[-1]))
 
@@ -601,7 +613,8 @@ def run_tp_trials(ctx, queue, nvals, configs_t):
             actual.append((evt.profile.END - evt.profile.START)*1e-9)
             predicted.append(cycles/(gstats.sm_clock_freq*10**9))
 
-            update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
+            #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
+            update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(np.float32).itemsize, model)
             y.append(copy.copy(actual[-1]))
@@ -701,7 +714,8 @@ def run_conv_trials(ctx, queue, nvals, configs_t):
             actual.append((evt.profile.END - evt.profile.START)*1e-9)
             predicted.append(cycles/(gstats.sm_clock_freq*10**9))
 
-            update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
+            #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
+            update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(np.float32).itemsize, model)
             y.append(copy.copy(actual[-1]))
@@ -776,7 +790,8 @@ def run_empt_trials(ctx, queue, nvals, configs_t):
             actual.append((evt.profile.END - evt.profile.START)*1e-9)
             predicted.append(cycles/(gstats.sm_clock_freq*10**9))
 
-            update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
+            #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
+            update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(np.float32).itemsize, model)
             y.append(copy.copy(actual[-1]))
@@ -857,7 +872,8 @@ def run_fd_trials(ctx, queue, nvals, configs_t):
             actual.append((evt.profile.END - evt.profile.START)*1e-9)
             predicted.append(cycles/(gstats.sm_clock_freq*10**9))
 
-            update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
+            #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
+            update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(np.float32).itemsize, model)
             y.append(copy.copy(actual[-1]))
