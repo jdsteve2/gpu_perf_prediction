@@ -23,11 +23,10 @@ run_fd = False
 run_mm = True
 run_axpy = True
 run_tp = True
-#run_empt = True
+run_empt = True
 run_fd = True
 
-compute_const_manually = True
-add_empty_test = True
+compute_const_manually = False
 
 def main():
     # setup
@@ -129,8 +128,18 @@ def main():
 
         # TODO, make copies or move pointers?
         Atrain, ytrain, Atest, ytest = split_for_train_test(lstsq_A, lstsq_y)
-        lstsq_weights, resid, q, q = np.linalg.lstsq(Atrain, ytrain)
-        U, s, V = np.linalg.svd(Atrain, full_matrices=False)
+        #lstsq_weights, resid, q, q = np.linalg.lstsq(Atrain, ytrain)
+
+        ones = np.ones(len(ytrain))
+        Atrain_for_relerr = copy.copy(Atrain)
+        #TODO figure out when I really need copy.copy)
+        for row in range(len(Atrain)):
+            for col in range(len(Atrain[0])):
+                Atrain_for_relerr[row][col] = Atrain[row][col]/ytrain[row]
+        lstsq_weights, resid, q, q = np.linalg.lstsq(Atrain_for_relerr, ones)
+
+        #U, s, V = np.linalg.svd(Atrain, full_matrices=False)
+        U, s, V = np.linalg.svd(Atrain_for_relerr, full_matrices=False)
 
         # add const back in
         if compute_const_manually:
@@ -138,6 +147,7 @@ def main():
             ytest[:] = [x + const for x in ytest]
             lstsq_y[:] = [x + const for x in lstsq_y]
 
+        '''
         # add empty kernel runs to test even if we didn't train on them
         if add_empty_test:
             nvals = [2**(10+x) for x in range(trials_n)]
@@ -149,6 +159,7 @@ def main():
             for row in range(len(Atest_empt)):
                 lstsq_A.append(copy.copy(Atest_empt[row]))
                 lstsq_y.append(copy.copy(ytest_empt[row]))
+        '''
 
         # add const back
         if compute_const_manually:
@@ -165,10 +176,12 @@ def main():
         for row1 in range(len(ytrain)):
             for j in range(len(ytrain)-1-row1):
                 row2 = row1+1+j
-                cos_angles.append(cos_angle_btw(Atrain[row1], Atrain[row2]))
+                #cos_angles.append(cos_angle_btw(Atrain[row1], Atrain[row2]))
+                cos_angles.append(cos_angle_btw(Atrain_for_relerr[row1], Atrain_for_relerr[row2]))
                 #print(row1, row2, cos_angles[-1])
 
-        print("Least Squares Residual:\n", np.dot(Atrain, lstsq_weights)-ytrain)
+        #print("Least Squares Residual:\n", np.dot(Atrain, lstsq_weights)-ytrain)
+        print("Least Squares Residual:\n", np.dot(Atrain_for_relerr, lstsq_weights)-ytrain)
         print("Least Squares singular values:\n", s)
         print("="*40+"TIMING RESULTS")
 
@@ -189,9 +202,11 @@ def main():
         print("i\tactual\t\tlstsq\t\terror")
         rel_error_lstsq = []
         for i in range(len(ytest)):
+            #predicted_lstsq = np.dot(Atest[i], lstsq_weights)
             predicted_lstsq = np.dot(Atest[i], lstsq_weights)
             actual = ytest[i]
             rel_error_lstsq.append((predicted_lstsq-actual)/actual)
+            #rel_error_lstsq.append(predicted_lstsq-actual)
             print("%i\t%.7f\t%.7f\t%.7f" % (i, actual, predicted_lstsq, rel_error_lstsq[i]))
 
         print("i\tactual\t\tHK\t\terror")
@@ -200,6 +215,7 @@ def main():
             predicted = predicted_times_HK[i]
             actual = actual_times_all[i]
             rel_error_HK.append((predicted-actual)/actual)
+            #rel_error_HK.append(predicted-actual)
             print("%i\t%.7f\t%.7f\t%.7f" % (i, actual, predicted, rel_error_HK[i]))
         print("avg relative error HK: ", np.average(np.absolute(rel_error_HK))) 
         print("avg relative error LS: ", np.average(np.absolute(rel_error_lstsq)))
@@ -294,9 +310,9 @@ def update_LS_matrix(A, flops, intops, f32coal_l, f32coal_s, f32uncoal_l, f32unc
               multiplier*itemsize*f32coal_l/thread_work_units,
               multiplier*itemsize*f32uncoal_s/thread_work_units,
               multiplier*itemsize*f32coal_s/thread_work_units,
-              multiplier*itemsize*abs(f32uncoal_s-f32uncoal_l)/thread_work_units,
-              multiplier*itemsize*abs(f32coal_s-f32coal_l)/thread_work_units,
-              multiplier*barrier_ct]), #])
+              multiplier*itemsize*min(f32uncoal_s, f32uncoal_l)/thread_work_units,
+              multiplier*itemsize*min(f32coal_s, f32coal_l)/thread_work_units,
+              multiplier*barrier_ct]) 
     if not compute_const_manually:
         A[-1].append(1.0)
     #          1.0]) # TODO why is it better without this?
