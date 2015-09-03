@@ -23,9 +23,11 @@ run_fd = False
 run_mm = True
 run_axpy = True
 run_tp = True
+run_conv = True
 run_empt = True
 run_fd = True
 
+warm_up_gpu = True
 compute_const_manually = False
 
 def main():
@@ -48,9 +50,10 @@ def main():
     trials_n = 4
 
     # warm up the gpu
-    nvals = [2**(9+x) for x in range(trials_n)]
-    configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
-    aa, bb, cc, dd = run_mm_trials(ctx, queue, nvals, configs_t, "allcoal")
+    if warm_up_gpu:
+        nvals = [2**(8+x) for x in range(trials_n)]
+        configs_t = [(8, 8), (16, 16), (32, 32)]
+        aa, bb, cc, dd = run_mm_trials(ctx, queue, nvals, configs_t, "allcoal")
 
     # calculate constant with empty kernel
     if compute_const_manually:
@@ -78,7 +81,7 @@ def main():
         '''
     # now train on axpy
     if run_axpy:
-        nvals = [2**(20+x*2) for x in range(trials_n)]
+        nvals = [2**(24+x) for x in range(trials_n)]
         #configs_t = [(16, 1), (32, 1), (64, 1), (128, 1), (256, 1), (512, 1)]
         configs_t = [(64, 1), (128, 1), (256, 1), (512, 1)]
         A_axpy, y_axpy, predicted_axpy, actual_axpy = run_axpy_trials(ctx, queue, nvals, configs_t)
@@ -92,17 +95,15 @@ def main():
         update_results(lstsq_A, A_tp, lstsq_y, y_tp, predicted_times_HK,
                        predicted_tp, actual_times_all, actual_tp)
     if run_conv:
-        """
-        nvals = [2**(10+x) for x in range(trials_n)]
+        #nvals = [2**(7+x) for x in range(trials_n)]
         #configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
-        configs_t = [(16, 16)]
+        nvals = [2**(9+x) for x in range(trials_n)]
+        configs_t = [(8, 8), (16, 16), (32, 32)]
+        #configs_t = [(8, 8), (16, 16)]
+        #configs_t = [(16, 16)]
         A_conv, y_conv, predicted_conv, actual_conv = run_conv_trials(ctx, queue, nvals, configs_t)
-        for row in range(len(A_conv)):
-            lstsq_A.append(copy.copy(A_conv[row]))
-            lstsq_y.append(copy.copy(y_conv[row]))
-            predicted_times_HK.append(copy.copy(predicted_conv[row]))
-            actual_times_all.append(copy.copy(actual_conv[row]))
-        """
+        update_results(lstsq_A, A_conv, lstsq_y, y_conv, predicted_times_HK,
+                       predicted_conv, actual_times_all, actual_conv)
 
     if run_fd:
         nvals = [2**(10+x) for x in range(trials_n)]
@@ -315,8 +316,6 @@ def update_LS_matrix(A, flops, intops, f32coal_l, f32coal_s, f32uncoal_l, f32unc
               multiplier*barrier_ct]) 
     if not compute_const_manually:
         A[-1].append(1.0)
-    #          1.0]) # TODO why is it better without this?
-    # TODO add in constant manually
 
 def update_results(A, A_new, y, y_new, predicted_HK, predicted_HK_new, actual_all,
                    actual_new):
@@ -355,12 +354,13 @@ def run_mm_trials(ctx, queue, nvals, configs_t, version):
     y = []
     predicted = []
     actual = []
+    dtype = np.float32
 
     #TODO figure out smem usage issue
     for n in nvals:
-        a_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=np.float32)
-        b_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=np.float32)
-        c_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=np.float32)
+        a_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=dtype)
+        b_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=dtype)
+        c_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=dtype)
 
         order = "C"
         knl = lp.make_kernel(
@@ -368,9 +368,9 @@ def run_mm_trials(ctx, queue, nvals, configs_t, version):
             [
                 "c[i, j] = sum(k, a[i, k]*b[k, j])"
             ],[
-                lp.GlobalArg("a", np.float32, shape=(n, n), order=order),
-                lp.GlobalArg("b", np.float32, shape=(n, n), order=order),
-                lp.GlobalArg("c", np.float32, shape=(n, n), order=order),
+                lp.GlobalArg("a", dtype, shape=(n, n), order=order),
+                lp.GlobalArg("b", dtype, shape=(n, n), order=order),
+                lp.GlobalArg("c", dtype, shape=(n, n), order=order),
             ], name="matmul")
 
         ref_knl = knl
@@ -439,7 +439,7 @@ def run_mm_trials(ctx, queue, nvals, configs_t, version):
                                  barrier_ct, reg32_per_thread, shared_mem_per_block)
             tconfig = ThreadConfig(BSIZEx*BSIZEy, total_blocks)
             model = PerfModel(gstats, kstats, tconfig,
-                            np.dtype(np.float32))
+                            np.dtype(dtype))
             cycles = model.compute_total_cycles()
             actual.append((evt.profile.END - evt.profile.START)*1e-9)
             predicted.append(cycles/(gstats.sm_clock_freq*10**9))
@@ -453,7 +453,7 @@ def run_mm_trials(ctx, queue, nvals, configs_t, version):
             #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
-                             np.dtype(np.float32).itemsize, model)
+                             np.dtype(dtype).itemsize, model)
             y.append(copy.copy(actual[-1]))
 
     return (A, y, predicted, actual)
@@ -464,14 +464,14 @@ def run_axpy_trials(ctx, queue, nvals, configs_t):
     y = []
     predicted = []
     actual = []
+    dtype = np.float32
 
     #TODO figure out smem usage issue
     for n in nvals:
-        x_vec_dev = cl.clrandom.rand(queue, n, dtype=np.float32)
-        y_vec_dev = cl.clrandom.rand(queue, n, dtype=np.float32)
-        z_vec_dev = cl.clrandom.rand(queue, n, dtype=np.float32)
+        x_vec_dev = cl.clrandom.rand(queue, n, dtype=dtype)
+        y_vec_dev = cl.clrandom.rand(queue, n, dtype=dtype)
+        z_vec_dev = cl.clrandom.rand(queue, n, dtype=dtype)
 
-        dtype = np.float32
         knl = lp.make_kernel(
             "[n] -> {[i]: 0<=i<%d}" % n,
             [
@@ -539,7 +539,7 @@ def run_axpy_trials(ctx, queue, nvals, configs_t):
                                  f32coal*unroll/n, barrier_ct, reg32_per_thread,
                                  shared_mem_per_block)
             tconfig = ThreadConfig(BSIZEx*BSIZEy, total_blocks)
-            model = PerfModel(gstats, kstats, tconfig, np.dtype(np.float32))
+            model = PerfModel(gstats, kstats, tconfig, np.dtype(dtype))
             cycles = model.compute_total_cycles()
 
             actual.append((evt.profile.END - evt.profile.START)*1e-9)
@@ -548,7 +548,7 @@ def run_axpy_trials(ctx, queue, nvals, configs_t):
             #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n/unroll,
-                             np.dtype(np.float32).itemsize, model)
+                             np.dtype(dtype).itemsize, model)
             y.append(copy.copy(actual[-1]))
 
     return (A, y, predicted, actual)
@@ -559,12 +559,12 @@ def run_tp_trials(ctx, queue, nvals, configs_t):
     y = []
     predicted = []
     actual = []
+    dtype = np.float32
 
     for n in nvals:
-        a_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=np.float32)
-        b_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=np.float32)
+        a_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=dtype)
+        b_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=dtype)
         order = "C"
-        dtype = np.float32
         knl = lp.make_kernel(
                 "{[i,j]: 0<=i,j<%d}" % n,
                 [
@@ -623,7 +623,7 @@ def run_tp_trials(ctx, queue, nvals, configs_t):
                                  barrier_ct, reg32_per_thread, shared_mem_per_block)
             tconfig = ThreadConfig(BSIZEx*BSIZEy, total_blocks)
             model = PerfModel(gstats, kstats, tconfig,
-                            np.dtype(np.float32))
+                            np.dtype(dtype))
             cycles = model.compute_total_cycles()
 
             actual.append((evt.profile.END - evt.profile.START)*1e-9)
@@ -632,7 +632,7 @@ def run_tp_trials(ctx, queue, nvals, configs_t):
             #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
-                             np.dtype(np.float32).itemsize, model)
+                             np.dtype(dtype).itemsize, model)
             y.append(copy.copy(actual[-1]))
 
     return (A, y, predicted, actual)
@@ -643,9 +643,10 @@ def run_conv_trials(ctx, queue, nvals, configs_t):
     y = []
     predicted = []
     actual = []
+    dtype = np.float32
+    ncolors = 3
 
     for n in nvals:
-        dtype = np.float32
         knl = lp.make_kernel(
             "{ [iimg, ifeat, icolor, im_x, im_y, f_x, f_y]: \
                 -f_w <= f_x,f_y <= f_w \
@@ -665,7 +666,7 @@ def run_conv_trials(ctx, queue, nvals, configs_t):
             ],
             assumptions="f_w>=1 and im_w, im_h >= 2*f_w+1 and nfeats>=1 and nimgs>=0",
             flags="annotate_inames",
-            defines=dict(ncolors=3),
+            defines=dict(ncolors=ncolors),
             name="conv")
 
         f_w = 3
@@ -677,13 +678,21 @@ def run_conv_trials(ctx, queue, nvals, configs_t):
 
             knl = ref_knl
 
+            im_w = n
+            im_h = n
+            nfeats = 3
+            nimgs = 3
+
+            f_dev = cl.clrandom.rand(queue, (nfeats, 2*f_w+1, 2*f_w+1, ncolors), dtype=dtype)
+            img_dev = cl.clrandom.rand(queue, (nimgs+1, n+2*f_w, n+2*f_w, ncolors), dtype=dtype)
+
             knl = lp.split_iname(knl, "im_x", BSIZEx, outer_tag="g.0", inner_tag="l.0")
             knl = lp.split_iname(knl, "im_y", BSIZEy, outer_tag="g.1", inner_tag="l.1")
             knl = lp.tag_inames(knl, dict(ifeat="g.2"))
             knl = lp.add_prefetch(knl, "f[ifeat,:,:,:]")
             knl = lp.add_prefetch(knl, "img", "im_x_inner, im_y_inner, f_x, f_y")
 
-            params=dict(im_w=128, im_h=128, f_w=f_w, nfeats=3, nimgs=3)
+            params=dict(im_w=im_w, im_h=im_h, f_w=f_w, nfeats=nfeats, nimgs=nimgs)
 
             #check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=True, parameters=params)
             #print "Correctness check: \n", check
@@ -695,13 +704,12 @@ def run_conv_trials(ctx, queue, nvals, configs_t):
             ptx_src_file = open(knl.name+".ptx", 'w')
             ptx_src_file.write(ptx_src)
             #'''
-
             barrier_poly = get_barrier_poly(knl)
             barrier_ct = barrier_poly.eval_with_dict(params)
 
             op_map = get_op_poly(knl)
             flops, iops = get_32b_ops(op_map, params)
-
+            #TODO figure out why block sizes that don't fit perfeclty lead to more total flops/iops
             sub_map = get_DRAM_access_poly(knl)  # noqa
             f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(sub_map, params)
             f32coal = f32coal_l + f32coal_s
@@ -712,19 +720,39 @@ def run_conv_trials(ctx, queue, nvals, configs_t):
             #print "="*40+"TIMING RESULTS"
             print("running kernel...")
             #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
-            evt, (out,) = knl(queue,  im_w=128, im_h=128, nfeats=3, nimgs=3)
+            #evt, (out,) = knl(queue, im_w=128, im_h=128, nfeats=3, nimgs=3)
+            evt, (out,) = knl(queue, f=f_dev, img=img_dev, im_w=im_w, im_h=im_h, nfeats=nfeats, nimgs=nimgs)
             evt.wait()
-            1/00
+
             gstats = GPUStats('TeslaK20')
-            reg32_per_thread = 8
-            shared_mem_per_block = 4*BSIZEx*BSIZEy
+            reg32_per_thread = 33
+            shared_mem_per_block = (ncolors*(f_w*2+1)*(f_w*2+1)+
+                                    (BSIZEx+f_w*2)*(BSIZEy+f_w*2)
+                                     )*np.dtype(dtype).itemsize
             total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
             total_threads = total_blocks*BSIZEx*BSIZEy
+            #print(op_map.dict.get(
+            #            np.dtype(np.float32),isl.PwQPolynomial('{ 0 }')
+            #            ))
+            #print(sub_map.dict)
+            '''
+            f32_l = sub_map.dict.get(
+                                (np.dtype(np.float32), 'uniform', 'load'),
+                                isl.PwQPolynomial('{ 0 }')
+                                ).eval_with_dict(params)
+            f32_s = sub_map.dict.get(
+                                (np.dtype(np.float32), 'uniform', 'store'),
+                                isl.PwQPolynomial('{ 0 }')
+                                ).eval_with_dict(params)
+            f32uniform = f32_l+f32_s
+            print(f32coal, f32uncoal, f32uniform, f32coal+f32uncoal+f32uniform)
+            '''
+            #print(n*n, flops, flops/(total_threads))
             kstats = KernelStats(flops/(n*n), f32uncoal/(n*n), f32coal/(n*n),
                                  barrier_ct, reg32_per_thread, shared_mem_per_block)
             tconfig = ThreadConfig(BSIZEx*BSIZEy, total_blocks)
             model = PerfModel(gstats, kstats, tconfig,
-                            np.dtype(np.float32))
+                            np.dtype(dtype))
             cycles = model.compute_total_cycles()
 
             actual.append((evt.profile.END - evt.profile.START)*1e-9)
@@ -732,8 +760,8 @@ def run_conv_trials(ctx, queue, nvals, configs_t):
 
             #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
-                             f32uncoal_s, barrier_ct, total_blocks, n*n,
-                             np.dtype(np.float32).itemsize, model)
+                             f32uncoal_s, barrier_ct, total_blocks, n*n,      #TODO try total_threads for this
+                             np.dtype(dtype).itemsize, model)
             y.append(copy.copy(actual[-1]))
 
     return (A, y, predicted, actual)
@@ -744,6 +772,7 @@ def run_empt_trials(ctx, queue, nvals, configs_t):
     y = []
     predicted = []
     actual = []
+    dtype = np.float32
 
     for n in nvals:
         knl = lp.make_kernel(
@@ -800,7 +829,7 @@ def run_empt_trials(ctx, queue, nvals, configs_t):
             #tconfig = ThreadConfig(0, total_blocks)
             tconfig = ThreadConfig(BSIZEx*BSIZEy, total_blocks)
             model = PerfModel(gstats, kstats, tconfig,
-                            np.dtype(np.float32))
+                            np.dtype(dtype))
             cycles = model.compute_total_cycles()
 
             actual.append((evt.profile.END - evt.profile.START)*1e-9)
@@ -809,7 +838,7 @@ def run_empt_trials(ctx, queue, nvals, configs_t):
             #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
-                             np.dtype(np.float32).itemsize, model)
+                             np.dtype(dtype).itemsize, model)
             y.append(copy.copy(actual[-1]))
 
     return (A, y, predicted, actual)
@@ -820,16 +849,17 @@ def run_fd_trials(ctx, queue, nvals, configs_t):
     y = []
     predicted = []
     actual = []
+    dtype = np.float32
 
     for n in nvals:
-        u_mat_dev = cl.clrandom.rand(queue, (n+2, n+2), dtype=np.float32)
+        u_mat_dev = cl.clrandom.rand(queue, (n+2, n+2), dtype=dtype)
         knl = lp.make_kernel(
               "{[i,j]: 0<=i,j<n}",
               "result[i,j] = u[i, j]**2 + -1 + (-4)*u[i + 1, j + 1] \
                     + u[i + 1 + 1, j + 1] + u[i + 1 + -1, j + 1] \
                     + u[i + 1, j + 1 + 1] + u[i + 1, j + 1 + -1]",
               name="finite_diff")
-        knl = lp.add_and_infer_dtypes(knl, {"u": np.float32})
+        knl = lp.add_and_infer_dtypes(knl, {"u": dtype})
         ref_knl = knl
 
         for BSIZEx, BSIZEy in configs_t:
@@ -882,7 +912,7 @@ def run_fd_trials(ctx, queue, nvals, configs_t):
                                  barrier_ct, reg32_per_thread, shared_mem_per_block)
             tconfig = ThreadConfig(BSIZEx*BSIZEy, total_blocks)
             model = PerfModel(gstats, kstats, tconfig,
-                            np.dtype(np.float32))
+                            np.dtype(dtype))
             cycles = model.compute_total_cycles()
 
             actual.append((evt.profile.END - evt.profile.START)*1e-9)
@@ -891,7 +921,7 @@ def run_fd_trials(ctx, queue, nvals, configs_t):
             #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
-                             np.dtype(np.float32).itemsize, model)
+                             np.dtype(dtype).itemsize, model)
             y.append(copy.copy(actual[-1]))
 
     return (A, y, predicted, actual)
