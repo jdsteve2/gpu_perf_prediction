@@ -29,6 +29,8 @@ run_fd = True
 
 warm_up_gpu = True
 compute_const_manually = False
+averaging_trials = 7
+
 
 def main():
     # setup
@@ -49,18 +51,12 @@ def main():
 
     trials_n = 4
 
-    # warm up the gpu
+
+    #TODO remove
     if warm_up_gpu:
-        nvals = [2**(8+x) for x in range(trials_n)]
+        nvals = [2**(8+x) for x in range(trials_n-1)]
         configs_t = [(8, 8), (16, 16), (32, 32)]
         aa, bb, cc, dd = run_mm_trials(ctx, queue, nvals, configs_t, "allcoal")
-
-    # calculate constant with empty kernel
-    if compute_const_manually:
-        nvals = [int(2**(10+x)) for x in range(trials_n)]
-        configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
-        aaa, bbb, ccc, const_calibration = run_empt_trials(ctx, queue, nvals, configs_t)
-        const = np.average(const_calibration)
 
     if run_mm:
         nvals = [2**(9+x) for x in range(trials_n)]
@@ -81,9 +77,9 @@ def main():
         '''
     # now train on axpy
     if run_axpy:
-        nvals = [2**(24+x) for x in range(trials_n)]
+        nvals = [2**(25+x) for x in range(trials_n)]
         #configs_t = [(16, 1), (32, 1), (64, 1), (128, 1), (256, 1), (512, 1)]
-        configs_t = [(64, 1), (128, 1), (256, 1), (512, 1)]
+        configs_t = [(128, 1), (256, 1), (512, 1), (1024, 1)] # TODO figure out problem with 64, 1 (why not slower?)
         A_axpy, y_axpy, predicted_axpy, actual_axpy = run_axpy_trials(ctx, queue, nvals, configs_t)
         update_results(lstsq_A, A_axpy, lstsq_y, y_axpy, predicted_times_HK,
                        predicted_axpy, actual_times_all, actual_axpy)
@@ -302,6 +298,7 @@ def update_LS_matrix(A, flops, intops, f32coal_l, f32coal_s, f32uncoal_l, f32unc
     reps_per_SM = math.ceil(blocks/(model.active_blocks_per_SM*
                                     model.GPU_stats.SM_count))
     multiplier = reps_per_SM
+    #print(blocks, model.active_blocks_per_SM, model.GPU_stats.SM_count, multiplier)
     #multiplier = math.ceil(blocks/model.GPU_stats.SM_count)
     #multiplier = blocks
     # TODO assumes there are enough blocks to fully load all SMs
@@ -347,6 +344,12 @@ def split_for_train_test(A, y):
         ytest.append(copy.copy(y[row]))
         '''
     return (Atrain, ytrain, Atest, ytest)
+
+def ptx_dump(ctx, knl, n, bx, by):
+    cknl = lp.compiled.CompiledKernel(ctx, knl)
+    ptx_src = cknl.cl_kernel_info().cl_kernel.program.binaries[0]
+    ptx_src_file = open("ptx_files/"+knl.name+"_"+str(n)+"_"+str(bx)+"_"+str(by)+".ptx", 'w')
+    ptx_src_file.write(ptx_src)
 
 def run_mm_trials(ctx, queue, nvals, configs_t, version):
 
@@ -395,12 +398,8 @@ def run_mm_trials(ctx, queue, nvals, configs_t, version):
             #check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=True)
             #print "Correctness check: \n", check
             # use ptx src to determine resource usage
-            """
-            cknl = lp.compiled.CompiledKernel(ctx, knl)
-            ptx_src = cknl.cl_kernel_info().cl_kernel.program.binaries[0]
-            ptx_src_file = open(knl.name+".ptx", 'w')
-            ptx_src_file.write(ptx_src)
-            """
+
+            #ptx_dump(ctx, knl, n, BSIZEx, BSIZEy)
 
             barrier_poly = get_barrier_poly(knl)
             barrier_ct = barrier_poly.eval_with_dict({'n': n})
@@ -427,11 +426,26 @@ def run_mm_trials(ctx, queue, nvals, configs_t, version):
             #print "="*40+"TIMING RESULTS"
             print("running kernel...")
             #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
+            
+            trial_times = []
+            for i in range(averaging_trials):
+                evt, (out,) = knl(queue, a=a_mat_dev, b=b_mat_dev, c=c_mat_dev)
+                evt.wait()
+                trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
+            avg_time = np.average(trial_times[2:])
+            '''
             evt, (out,) = knl(queue, a=a_mat_dev, b=b_mat_dev, c=c_mat_dev)
             evt.wait()
+            '''
 
             gstats = GPUStats('TeslaK20')
-            reg32_per_thread = 25
+            if BSIZEx == 8 or BSIZEx == 32:  # TODO fix hack
+                reg32_per_thread = 25
+            elif BSIZEx == 24:
+                reg32_per_thread = 18
+            elif BSIZEx == 16:
+                reg32_per_thread = 22
+
             shared_mem_per_block = 4*ksplit*(BSIZEx+BSIZEy)
             total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
             total_threads = total_blocks*BSIZEx*BSIZEy
@@ -441,7 +455,8 @@ def run_mm_trials(ctx, queue, nvals, configs_t, version):
             model = PerfModel(gstats, kstats, tconfig,
                             np.dtype(dtype))
             cycles = model.compute_total_cycles()
-            actual.append((evt.profile.END - evt.profile.START)*1e-9)
+            #actual.append((evt.profile.END - evt.profile.START)*1e-9)
+            actual.append(avg_time)
             predicted.append(cycles/(gstats.sm_clock_freq*10**9))
 
             '''
@@ -497,12 +512,8 @@ def run_axpy_trials(ctx, queue, nvals, configs_t):
             #print "Correctness check: \n", check
 
             # use ptx src to determine resource usage
-            '''
-            cknl = lp.compiled.CompiledKernel(ctx, knl)
-            ptx_src = cknl.cl_kernel_info().cl_kernel.program.binaries[0]
-            ptx_src_file = open(knl.name+".ptx", 'w')
-            ptx_src_file.write(ptx_src)
-            '''
+            #ptx_dump(ctx, knl, n, BSIZEx, BSIZEy)
+
             barrier_poly = get_barrier_poly(knl)
             barrier_ct = barrier_poly.eval_with_dict({'n': n})
             op_map = get_op_poly(knl)
@@ -528,13 +539,28 @@ def run_axpy_trials(ctx, queue, nvals, configs_t):
             # -------
             print("running kernel...")
             #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
+            #'''
+            
+            trial_times = []
+            for i in range(averaging_trials):
+                evt, (out,) = knl(queue, x=x_vec_dev, y=y_vec_dev, z=z_vec_dev)
+                evt.wait()
+                trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
+            avg_time = np.average(trial_times[2:])
+            #print(n, BSIZEx, BSIZEy, trial_times)
+            '''
             evt, (out,) = knl(queue, x=x_vec_dev, y=y_vec_dev, z=z_vec_dev)
             evt.wait()
+            '''
 
             gstats = GPUStats('TeslaK20')
             reg32_per_thread = 20
             shared_mem_per_block = 0
             total_blocks = math.ceil(n/(BSIZEx*unroll))
+            
+            #print(n, BSIZEx)
+            #print(flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
+            #      f32uncoal_s, barrier_ct, total_blocks, n/unroll)
             kstats = KernelStats(flops*unroll/n, f32uncoal*unroll/n,
                                  f32coal*unroll/n, barrier_ct, reg32_per_thread,
                                  shared_mem_per_block)
@@ -542,7 +568,8 @@ def run_axpy_trials(ctx, queue, nvals, configs_t):
             model = PerfModel(gstats, kstats, tconfig, np.dtype(dtype))
             cycles = model.compute_total_cycles()
 
-            actual.append((evt.profile.END - evt.profile.START)*1e-9)
+            #actual.append((evt.profile.END - evt.profile.START)*1e-9)
+            actual.append(avg_time)
             predicted.append(cycles/(gstats.sm_clock_freq*10**9))
 
             #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
@@ -588,12 +615,7 @@ def run_tp_trials(ctx, queue, nvals, configs_t):
             #print "Correctness check: \n", check
 
             # use ptx src to determine resource usage
-            '''
-            cknl = lp.compiled.CompiledKernel(ctx, knl)
-            ptx_src = cknl.cl_kernel_info().cl_kernel.program.binaries[0]
-            ptx_src_file = open(knl.name+".ptx", 'w')
-            ptx_src_file.write(ptx_src)
-            '''
+            #ptx_dump(ctx, knl, n, BSIZEx, BSIZEy)
 
             barrier_poly = get_barrier_poly(knl)
             barrier_ct = barrier_poly.eval_with_dict({'n': n})
@@ -611,11 +633,22 @@ def run_tp_trials(ctx, queue, nvals, configs_t):
             #print "="*40+"TIMING RESULTS"
             print("running kernel...")
             #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
+            
+            trial_times = []
+            for i in range(averaging_trials):
+                evt, (out,) = knl(queue, a=a_mat_dev, b=b_mat_dev)
+                evt.wait()
+                trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
+            avg_time = np.average(trial_times[2:])
+            '''
             evt, (out,) = knl(queue, a=a_mat_dev, b=b_mat_dev)
             evt.wait()
-
+            '''
             gstats = GPUStats('TeslaK20')
-            reg32_per_thread = 8
+            if n % BSIZEx == 0 and n % BSIZEy == 0:
+                reg32_per_thread = 8
+            else:
+                reg32_per_thread = 9
             shared_mem_per_block = 4*BSIZEx*BSIZEy
             total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
             total_threads = total_blocks*BSIZEx*BSIZEy
@@ -626,7 +659,8 @@ def run_tp_trials(ctx, queue, nvals, configs_t):
                             np.dtype(dtype))
             cycles = model.compute_total_cycles()
 
-            actual.append((evt.profile.END - evt.profile.START)*1e-9)
+            #actual.append((evt.profile.END - evt.profile.START)*1e-9)
+            actual.append(avg_time)
             predicted.append(cycles/(gstats.sm_clock_freq*10**9))
 
             #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
@@ -698,12 +732,8 @@ def run_conv_trials(ctx, queue, nvals, configs_t):
             #print "Correctness check: \n", check
 
             # use ptx src to determine resource usage
-            #'''
-            cknl = lp.compiled.CompiledKernel(ctx, knl)
-            ptx_src = cknl.cl_kernel_info().cl_kernel.program.binaries[0]
-            ptx_src_file = open(knl.name+".ptx", 'w')
-            ptx_src_file.write(ptx_src)
-            #'''
+            #ptx_dump(ctx, knl, n, BSIZEx, BSIZEy)
+
             barrier_poly = get_barrier_poly(knl)
             barrier_ct = barrier_poly.eval_with_dict(params)
 
@@ -720,10 +750,17 @@ def run_conv_trials(ctx, queue, nvals, configs_t):
             #print "="*40+"TIMING RESULTS"
             print("running kernel...")
             #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
-            #evt, (out,) = knl(queue, im_w=128, im_h=128, nfeats=3, nimgs=3)
+            
+            trial_times = []
+            for i in range(averaging_trials):
+                evt, (out,) = knl(queue, f=f_dev, img=img_dev, im_w=im_w, im_h=im_h, nfeats=nfeats, nimgs=nimgs)
+                evt.wait()
+                trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
+            avg_time = np.average(trial_times[2:])
+            '''
             evt, (out,) = knl(queue, f=f_dev, img=img_dev, im_w=im_w, im_h=im_h, nfeats=nfeats, nimgs=nimgs)
             evt.wait()
-
+            '''
             gstats = GPUStats('TeslaK20')
             reg32_per_thread = 33
             shared_mem_per_block = (ncolors*(f_w*2+1)*(f_w*2+1)+
@@ -755,7 +792,8 @@ def run_conv_trials(ctx, queue, nvals, configs_t):
                             np.dtype(dtype))
             cycles = model.compute_total_cycles()
 
-            actual.append((evt.profile.END - evt.profile.START)*1e-9)
+            #actual.append((evt.profile.END - evt.profile.START)*1e-9)
+            actual.append(avg_time)
             predicted.append(cycles/(gstats.sm_clock_freq*10**9))
 
             #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
@@ -788,12 +826,8 @@ def run_empt_trials(ctx, queue, nvals, configs_t):
             #print "Correctness check: \n", check
 
             # use ptx src to determine resource usage
-            '''
-            cknl = lp.compiled.CompiledKernel(ctx, knl)
-            ptx_src = cknl.cl_kernel_info().cl_kernel.program.binaries[0]
-            ptx_src_file = open(knl.name+".ptx", 'w')
-            ptx_src_file.write(ptx_src)
-            '''
+            #ptx_dump(ctx, knl, n, BSIZEx, BSIZEy)
+
             params = {'n': n}
             barrier_poly = get_barrier_poly(knl)
             barrier_ct = barrier_poly.eval_with_dict(params)
@@ -813,11 +847,19 @@ def run_empt_trials(ctx, queue, nvals, configs_t):
             #print "="*40+"TIMING RESULTS"
             print("running kernel...")
             #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
+            
+            trial_times = []
+            for i in range(averaging_trials):
+                evt, out = knl(queue)
+                evt.wait()
+                trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
+            avg_time = np.average(trial_times[2:])
+            '''
             evt, out = knl(queue)
             evt.wait()
-
+            '''
             gstats = GPUStats('TeslaK20')
-            reg32_per_thread = 0
+            reg32_per_thread = 2
             shared_mem_per_block = 0
             #total_blocks = 0
             #total_threads = 0
@@ -832,7 +874,8 @@ def run_empt_trials(ctx, queue, nvals, configs_t):
                             np.dtype(dtype))
             cycles = model.compute_total_cycles()
 
-            actual.append((evt.profile.END - evt.profile.START)*1e-9)
+            #actual.append((evt.profile.END - evt.profile.START)*1e-9)
+            actual.append(avg_time)
             predicted.append(cycles/(gstats.sm_clock_freq*10**9))
 
             #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
@@ -877,12 +920,8 @@ def run_fd_trials(ctx, queue, nvals, configs_t):
             #print "Correctness check: \n", check
 
             # use ptx src to determine resource usage
-            '''
-            cknl = lp.compiled.CompiledKernel(ctx, knl)
-            ptx_src = cknl.cl_kernel_info().cl_kernel.program.binaries[0]
-            ptx_src_file = open(knl.name+".ptx", 'w')
-            ptx_src_file.write(ptx_src)
-            '''
+            #ptx_dump(ctx, knl, n, BSIZEx, BSIZEy)
+
             params = {'n': n}
             barrier_poly = get_barrier_poly(knl)
             barrier_ct = barrier_poly.eval_with_dict(params)
@@ -900,11 +939,23 @@ def run_fd_trials(ctx, queue, nvals, configs_t):
             #print "="*40+"TIMING RESULTS"
             print("running kernel...")
             #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
+            
+            trial_times = []
+            for i in range(averaging_trials):
+                evt, (out,) = knl(queue, u=u_mat_dev)
+                evt.wait()
+                trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
+            avg_time = np.average(trial_times[2:])
+            '''
             evt, (out,) = knl(queue, u=u_mat_dev)
             evt.wait()
-
+            '''
             gstats = GPUStats('TeslaK20')
-            reg32_per_thread = 14
+            if n % BSIZEx == 0 and n % BSIZEy == 0:
+                reg32_per_thread = 14
+            else:
+                reg32_per_thread = 16
+
             shared_mem_per_block = 4*(BSIZEx+2)*(BSIZEy+2)
             total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
             total_threads = total_blocks*BSIZEx*BSIZEy
@@ -915,7 +966,8 @@ def run_fd_trials(ctx, queue, nvals, configs_t):
                             np.dtype(dtype))
             cycles = model.compute_total_cycles()
 
-            actual.append((evt.profile.END - evt.profile.START)*1e-9)
+            #actual.append((evt.profile.END - evt.profile.START)*1e-9)
+            actual.append(avg_time)
             predicted.append(cycles/(gstats.sm_clock_freq*10**9))
 
             #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
