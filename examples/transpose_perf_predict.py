@@ -62,29 +62,29 @@ for n in nvals:
         barrier_poly = get_barrier_poly(knl)
         barrier_count = barrier_poly.eval_with_dict({'n': n})
         op_map = get_op_poly(knl)
-        flops = op_map.dict.get(
+        flops = op_map.get(
                             np.dtype(np.float32),isl.PwQPolynomial('{ 0 }')
                             ).eval_with_dict({'n': n})
-        iops = op_map.dict.get(
+        iops = op_map.get(
                             np.dtype(np.int32),isl.PwQPolynomial('{ 0 }')
                             ).eval_with_dict({'n': n})
         sub_map = get_DRAM_access_poly(knl)  # noqa
 
-        f32coal_l = sub_map.dict.get(
+        f32coal_l = sub_map.get(
                             (np.dtype(np.float32), 'consecutive', 'load'),
                             isl.PwQPolynomial('{ 0 }')
                             ).eval_with_dict({'n': n})
-        f32coal_s = sub_map.dict.get(
+        f32coal_s = sub_map.get(
                             (np.dtype(np.float32), 'consecutive', 'store'),
                             isl.PwQPolynomial('{ 0 }')
                             ).eval_with_dict({'n': n})
         f32coal = f32coal_l + f32coal_s
         #print "coalesced: %i, (stores: %i, loads: %i)" % (f32coal, f32coal_s, f32coal_l)
-        f32uncoal_l = sub_map.dict.get(
+        f32uncoal_l = sub_map.get(
                             (np.dtype(np.float32), 'nonconsecutive', 'load'),
                             isl.PwQPolynomial('{ 0 }')
                             ).eval_with_dict({'n': n})
-        f32uncoal_s = sub_map.dict.get(
+        f32uncoal_s = sub_map.get(
                             (np.dtype(np.float32), 'nonconsecutive', 'store'),
                             isl.PwQPolynomial('{ 0 }')
                             ).eval_with_dict({'n': n})

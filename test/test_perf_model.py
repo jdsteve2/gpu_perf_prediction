@@ -173,6 +173,7 @@ def test_HK_linear():
     print "blk sz\tactive\tocc\t\tcwp\t\tmwp\t\tcpi\t\ttime"
     for i in range(trials):
         tconfig = ThreadConfig(threads[i], (math.ceil(n/(threads[i]**0.5))**2)/2.0)
+        # TODO why do I have to divide by 2.0 to match HK results?
         #print " ", n*n/threads[i], math.ceil(n/(threads[i]**0.5))**2, n
         model = PerfModel(gstats, kstats, tconfig, np.dtype(np.float32))
         times.append(model.compute_total_cycles() /
@@ -237,6 +238,7 @@ def test_HK_SVM():
     for i in range(trials):
         tconfig = ThreadConfig(threads[i],
                     math.ceil(n1/(threads[i]**0.5))*math.ceil(n2/(threads[i]**0.5))/4.0)
+                    # TODO why do I have to divide by 4.0 to match HK results?
         model = PerfModel(gstats, kstats, tconfig, np.dtype(np.float32))
         times.append(model.compute_total_cycles() /
                     (gstats.sm_clock_freq*(10**9))*(10**3))
