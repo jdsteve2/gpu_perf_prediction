@@ -40,7 +40,7 @@ def main():
     #print_device_info(ctx)
 
     lstsq_A = []
-    lstsq_y = []
+    #lstsq_y = []
     predicted_times_HK = []
     actual_times_all = []
     trials_n = 4
@@ -49,57 +49,56 @@ def main():
         nvals = [2**(9+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
         #'''
-        A_mm, y_mm, predicted_mm, actual_mm = run_mm_trials(ctx, queue, nvals,
+        A_mm, predicted_mm, actual_mm = run_mm_trials(ctx, queue, nvals,
                                                             configs_t, "allcoal")
-        update_results(lstsq_A, A_mm, lstsq_y, y_mm, predicted_times_HK,
+        update_results(lstsq_A, A_mm, predicted_times_HK,
                        predicted_mm, actual_times_all, actual_mm)
         '''
-        A_mm2, y_mm2, predicted_mm2, actual_mm2 = run_mm_trials(ctx, queue, nvals,
+        A_mm2, predicted_mm2, actual_mm2 = run_mm_trials(ctx, queue, nvals,
                                                             configs_t, "partcoal")
-        update_results(lstsq_A, A_mm2, lstsq_y, y_mm2, predicted_times_HK,
+        update_results(lstsq_A, A_mm2, predicted_times_HK,
                        predicted_mm2, actual_times_all, actual_mm2)
         '''
-    # now train on axpy
     if run_axpy:
         nvals = [2**(25+x) for x in range(trials_n)]
         configs_t = [(64, 1), (128, 1), (256, 1), (512, 1), (1024, 1)]
         # TODO figure out problem with 64, 1 (why not slower?)
-        A_axpy, y_axpy, predicted_axpy, actual_axpy = run_axpy_trials(ctx, queue, nvals, configs_t)
-        update_results(lstsq_A, A_axpy, lstsq_y, y_axpy, predicted_times_HK,
+        A_axpy, predicted_axpy, actual_axpy = run_axpy_trials(ctx, queue, nvals, configs_t)
+        update_results(lstsq_A, A_axpy, predicted_times_HK,
                        predicted_axpy, actual_times_all, actual_axpy)
     if run_tp:
         nvals = [2**(10+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
-        A_tp, y_tp, predicted_tp, actual_tp = run_tp_trials(ctx, queue, nvals, configs_t, prefetch=True)
-        update_results(lstsq_A, A_tp, lstsq_y, y_tp, predicted_times_HK,
+        A_tp, predicted_tp, actual_tp = run_tp_trials(ctx, queue, nvals, configs_t, prefetch=True)
+        update_results(lstsq_A, A_tp, predicted_times_HK,
                        predicted_tp, actual_times_all, actual_tp)
-        A_tp2, y_tp2, predicted_tp2, actual_tp2 = run_tp_trials(ctx, queue, nvals, configs_t, prefetch=False)
-        update_results(lstsq_A, A_tp2, lstsq_y, y_tp2, predicted_times_HK,
+        A_tp2, predicted_tp2, actual_tp2 = run_tp_trials(ctx, queue, nvals, configs_t, prefetch=False)
+        update_results(lstsq_A, A_tp2, predicted_times_HK,
                        predicted_tp2, actual_times_all, actual_tp2)
     if run_conv:
         nvals = [2**(8+x) for x in range(trials_n+1)]
         configs_t = [(8, 8), (16, 16), (32, 32)]
-        A_conv, y_conv, predicted_conv, actual_conv = run_conv_trials(ctx, queue, nvals, configs_t)
-        update_results(lstsq_A, A_conv, lstsq_y, y_conv, predicted_times_HK,
+        A_conv, predicted_conv, actual_conv = run_conv_trials(ctx, queue, nvals, configs_t)
+        update_results(lstsq_A, A_conv, predicted_times_HK,
                        predicted_conv, actual_times_all, actual_conv)
     if run_fd:
         nvals = [2**(10+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
-        A_fd, y_fd, predicted_fd, actual_fd = run_fd_trials(ctx, queue, nvals, configs_t)
-        update_results(lstsq_A, A_fd, lstsq_y, y_fd, predicted_times_HK,
+        A_fd, predicted_fd, actual_fd = run_fd_trials(ctx, queue, nvals, configs_t)
+        update_results(lstsq_A, A_fd, predicted_times_HK,
                        predicted_fd, actual_times_all, actual_fd)
     if run_empt:
         nvals = [2**(10+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
-        A_empt, y_empt, predicted_empt, actual_empt = run_empt_trials(ctx, queue, nvals, configs_t)
-        update_results(lstsq_A, A_empt, lstsq_y, y_empt, predicted_times_HK,
+        A_empt, predicted_empt, actual_empt = run_empt_trials(ctx, queue, nvals, configs_t)
+        update_results(lstsq_A, A_empt, predicted_times_HK,
                        predicted_empt, actual_times_all, actual_empt)
 
     # least squares calculations
     if run_mm or run_axpy or run_tp or run_conv or run_empt or run_fd:
 
         # TODO, make copies or move pointers?
-        Atrain, ytrain, Atest, ytest = split_for_train_test(lstsq_A, lstsq_y)
+        Atrain, ytrain, Atest, ytest = split_for_train_test(lstsq_A, actual_times_all)
         #lstsq_weights, resid, q, q = np.linalg.lstsq(Atrain, ytrain)
 
         ones = np.ones(len(ytrain))
@@ -144,7 +143,7 @@ def main():
 
         print(np.average(cos_angles))
 
-        print_Ay(lstsq_A, lstsq_y)
+        print_Ay(lstsq_A, actual_times_all)
 
         print("Weights:")
         for item in lstsq_weights:
@@ -248,11 +247,10 @@ def update_LS_matrix(A, flops, intops, f32coal_l, f32coal_s, f32uncoal_l, f32unc
     if not compute_const_manually:
         A[-1].append(1.0)
 
-def update_results(A, A_new, y, y_new, predicted_HK, predicted_HK_new, actual_all,
+def update_results(A, A_new, predicted_HK, predicted_HK_new, actual_all,
                    actual_new):
     for row in range(len(A_new)):
         A.append(copy.copy(A_new[row]))
-        y.append(copy.copy(y_new[row]))
         predicted_HK.append(copy.copy(predicted_HK_new[row]))
         actual_all.append(copy.copy(actual_new[row]))
 
@@ -293,7 +291,6 @@ def ptx_dump(ctx, knl, n, bx, by):
 def run_mm_trials(ctx, queue, nvals, configs_t, version):
 
     A = []
-    y = []
     predicted = []
     actual = []
     dtype = np.float32
@@ -404,14 +401,12 @@ def run_mm_trials(ctx, queue, nvals, configs_t, version):
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
-            y.append(copy.copy(actual[-1]))
 
-    return (A, y, predicted, actual)
+    return (A, predicted, actual)
 
 def run_axpy_trials(ctx, queue, nvals, configs_t):
 
     A = []
-    y = []
     predicted = []
     actual = []
     dtype = np.float32
@@ -507,14 +502,12 @@ def run_axpy_trials(ctx, queue, nvals, configs_t):
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n/unroll,
                              np.dtype(dtype).itemsize, model)
-            y.append(copy.copy(actual[-1]))
 
-    return (A, y, predicted, actual)
+    return (A, predicted, actual)
 
 def run_tp_trials(ctx, queue, nvals, configs_t, prefetch=True):
 
     A = []
-    y = []
     predicted = []
     actual = []
     dtype = np.float32
@@ -606,14 +599,12 @@ def run_tp_trials(ctx, queue, nvals, configs_t, prefetch=True):
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
-            y.append(copy.copy(actual[-1]))
 
-    return (A, y, predicted, actual)
+    return (A, predicted, actual)
 
 def run_conv_trials(ctx, queue, nvals, configs_t):
 
     A = []
-    y = []
     predicted = []
     actual = []
     dtype = np.float32
@@ -731,14 +722,12 @@ def run_conv_trials(ctx, queue, nvals, configs_t):
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,      #TODO try total_threads for this
                              np.dtype(dtype).itemsize, model)
-            y.append(copy.copy(actual[-1]))
 
-    return (A, y, predicted, actual)
+    return (A, predicted, actual)
 
 def run_empt_trials(ctx, queue, nvals, configs_t):
 
     A = []
-    y = []
     predicted = []
     actual = []
     dtype = np.float32
@@ -810,14 +799,12 @@ def run_empt_trials(ctx, queue, nvals, configs_t):
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
-            y.append(copy.copy(actual[-1]))
 
-    return (A, y, predicted, actual)
+    return (A, predicted, actual)
 
 def run_fd_trials(ctx, queue, nvals, configs_t):
 
     A = []
-    y = []
     predicted = []
     actual = []
     dtype = np.float32
@@ -899,68 +886,8 @@ def run_fd_trials(ctx, queue, nvals, configs_t):
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
-            y.append(copy.copy(actual[-1]))
 
-    return (A, y, predicted, actual)
-
-"""
-print("="*40+"TIMING RESULTS")
-print("n\tBx\tBy\tactual\t\tpredicted\terror\t\tlstsq\t\terror")
-rel_error = []
-rel_error_lstsq = []
-for i in range(len(actual_times_all)):
-    predicted = predicted_times_HK[i]
-    predicted_lstsq = np.dot(lstsq_A[i], lstsq_weights)
-    actual = actual_times_all[i]
-    rel_error.append((predicted-actual)/actual)
-    rel_error_lstsq.append((predicted_lstsq-actual)/actual)
-    print("%i\t%i\t%i\t%f\t%f\t%f\t%f\t%f" %
-                        (nvals[int(i/len(configs_t))], configs_t[i%len(configs_t)][0], 
-                         configs_t[i%len(configs_t)][1], actual, predicted,
-                         rel_error[i], predicted_lstsq, rel_error_lstsq[i]))
-"""
-
-"""
-print("="*40+"TIMING RESULTS")
-print("n\tBx\tBy\tactual\t\tpredicted\terror\t\tlstsq\t\terror")
-rel_error = []
-rel_error_lstsq = []
-for i in range(trials_n):
-    rel_error.append([])
-    rel_error_lstsq.append([])
-    for j in range(len(configs_t)):
-        predicted = predicted_times_HK[i*len(configs_t)+j]
-        predicted_lstsq = np.dot(lstsq_A[i*len(configs_t)+j], lstsq_weights)
-        actual = actual_times_all[i*len(configs_t)+j]
-        rel_error[i].append((predicted-actual)/actual)
-        rel_error_lstsq[i].append((predicted_lstsq-actual)/actual)
-        print("%i\t%i\t%i\t%f\t%f\t%f\t%f\t%f" %
-                            (nvals[i], configs_t[j][0], configs_t[j][1],
-                            actual, predicted, rel_error[i][-1], predicted_lstsq,
-                            rel_error_lstsq[i][-1]))
-
-print("\nHong Kim relative error:")
-print("\t", end='')
-for config in configs_t:
-    print("(%i,%i)\t\t" % (config[0], config[1]), end='')
-print("")
-for i in range(trials_n):
-    print("%i\t" % (nvals[i]), end='')
-    for j in range(len(configs_t)):
-        print("%f\t" % (rel_error[i][j]), end='')
-    print("")
-
-print("\nLeast squares relative error:")
-print("\t", end='')
-for config in configs_t:
-    print("(%i,%i)\t\t" % (config[0], config[1]), end='')
-print("")
-for i in range(trials_n):
-    print("%i\t" % (nvals[i]), end='')
-    for j in range(len(configs_t)):
-        print("%f\t" % (rel_error_lstsq[i][j]), end='')
-    print("")
-"""
+    return (A, predicted, actual)
 
 if __name__ == '__main__':
     main()
