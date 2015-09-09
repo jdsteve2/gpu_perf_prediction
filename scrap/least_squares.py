@@ -13,11 +13,11 @@ import islpy as isl
 import math
 import copy
 
-run_mm = False #True
-run_axpy = False #True
-run_tp = False #True
-run_conv = False #Not working yet
-run_empt = False ##True
+run_mm = False
+run_axpy = False
+run_tp = False
+run_conv = False
+run_empt = False
 run_fd = False
 
 run_mm = True
@@ -27,36 +27,23 @@ run_conv = True
 run_empt = True
 run_fd = True
 
-warm_up_gpu = False #True
+warm_up_gpu = False
 compute_const_manually = False
-averaging_trials = 7
-
+averaging_trials = 5
+warmup_trials = 2
 
 def main():
     # setup
-    # -----
     ctx = cl.create_some_context()
     queue = cl.CommandQueue(ctx,
                 properties=cl.command_queue_properties.PROFILING_ENABLE)
+    #print_device_info(ctx)
+
     lstsq_A = []
     lstsq_y = []
     predicted_times_HK = []
     actual_times_all = []
-
-    '''
-    print "="*40+"DEVICES"
-    print ctx.get_info(cl.context_info.DEVICES)
-    print "="*40
-    '''
-
     trials_n = 4
-
-
-    #TODO remove
-    if warm_up_gpu:
-        nvals = [2**(8+x) for x in range(trials_n-1)]
-        configs_t = [(8, 8), (16, 16), (32, 32)]
-        aa, bb, cc, dd = run_mm_trials(ctx, queue, nvals, configs_t, "allcoal")
 
     if run_mm:
         nvals = [2**(9+x) for x in range(trials_n)]
@@ -67,23 +54,19 @@ def main():
         update_results(lstsq_A, A_mm, lstsq_y, y_mm, predicted_times_HK,
                        predicted_mm, actual_times_all, actual_mm)
         '''
-        A_mm, y_mm, predicted_mm, actual_mm = run_mm_trials(ctx, queue, nvals,
+        A_mm2, y_mm2, predicted_mm2, actual_mm2 = run_mm_trials(ctx, queue, nvals,
                                                             configs_t, "partcoal")
-        for row in range(len(A_mm)):
-            lstsq_A.append(copy.copy(A_mm[row]))
-            lstsq_y.append(copy.copy(y_mm[row]))
-            predicted_times_HK.append(copy.copy(predicted_mm[row]))
-            actual_times_all.append(copy.copy(actual_mm[row]))
+        update_results(lstsq_A, A_mm2, lstsq_y, y_mm2, predicted_times_HK,
+                       predicted_mm2, actual_times_all, actual_mm2)
         '''
     # now train on axpy
     if run_axpy:
         nvals = [2**(25+x) for x in range(trials_n)]
-        #configs_t = [(16, 1), (32, 1), (64, 1), (128, 1), (256, 1), (512, 1)]
-        configs_t = [(64, 1), (128, 1), (256, 1), (512, 1), (1024, 1)] # TODO figure out problem with 64, 1 (why not slower?)
+        configs_t = [(64, 1), (128, 1), (256, 1), (512, 1), (1024, 1)]
+        # TODO figure out problem with 64, 1 (why not slower?)
         A_axpy, y_axpy, predicted_axpy, actual_axpy = run_axpy_trials(ctx, queue, nvals, configs_t)
         update_results(lstsq_A, A_axpy, lstsq_y, y_axpy, predicted_times_HK,
                        predicted_axpy, actual_times_all, actual_axpy)
-
     if run_tp:
         nvals = [2**(10+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
@@ -94,23 +77,17 @@ def main():
         update_results(lstsq_A, A_tp2, lstsq_y, y_tp2, predicted_times_HK,
                        predicted_tp2, actual_times_all, actual_tp2)
     if run_conv:
-        #nvals = [2**(7+x) for x in range(trials_n)]
-        #configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
         nvals = [2**(8+x) for x in range(trials_n+1)]
         configs_t = [(8, 8), (16, 16), (32, 32)]
-        #configs_t = [(8, 8), (16, 16)]
-        #configs_t = [(16, 16)]
         A_conv, y_conv, predicted_conv, actual_conv = run_conv_trials(ctx, queue, nvals, configs_t)
         update_results(lstsq_A, A_conv, lstsq_y, y_conv, predicted_times_HK,
                        predicted_conv, actual_times_all, actual_conv)
-
     if run_fd:
         nvals = [2**(10+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
         A_fd, y_fd, predicted_fd, actual_fd = run_fd_trials(ctx, queue, nvals, configs_t)
         update_results(lstsq_A, A_fd, lstsq_y, y_fd, predicted_times_HK,
                        predicted_fd, actual_times_all, actual_fd)
-
     if run_empt:
         nvals = [2**(10+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
@@ -130,28 +107,20 @@ def main():
         #TODO figure out when I really need copy.copy)
 
         # divide by runtime to minimize relative error
-        for row in range(len(Atrain)):
-            for col in range(len(Atrain[0])):
-                Atrain_for_relerr[row][col] = Atrain[row][col]/ytrain[row]
+        divide_rows_by_weights(Atrain_for_relerr, ytrain)
         lstsq_weights, resid, q, q = np.linalg.lstsq(Atrain_for_relerr, ones)
 
-        #U, s, V = np.linalg.svd(Atrain, full_matrices=False)
         U, s, V = np.linalg.svd(Atrain_for_relerr, full_matrices=False)
 
         #  TODO y and actual are same, redundant
-        cos_angles = []
-        for row1 in range(len(ytrain)):
-            for j in range(len(ytrain)-1-row1):
-                row2 = row1+1+j
-                #cos_angles.append(cos_angle_btw(Atrain[row1], Atrain[row2]))
-                cos_angles.append(cos_angle_btw(Atrain_for_relerr[row1], Atrain_for_relerr[row2]))
-                #print(row1, row2, cos_angles[-1])
+        cos_angles = get_cos_angles_bt_rows(Atrain_for_relerr)
 
         #print("Least Squares Residual:\n", np.dot(Atrain, lstsq_weights)-ytrain)
         print("Least Squares Residual:\n", np.dot(Atrain_for_relerr, lstsq_weights)-ytrain)
         print("Least Squares singular values:\n", s)
         print("="*40+"TIMING RESULTS")
 
+        # print least squares results
         print("i\tactual\t\tlstsq\t\terror")
         rel_error_lstsq = []
         for i in range(len(ytest)):
@@ -160,14 +129,15 @@ def main():
             rel_error_lstsq.append((predicted_lstsq-actual)/actual)
             print("%i\t%.7f\t%.7f\t%.7f" % (i, actual, predicted_lstsq, rel_error_lstsq[i]))
 
+        # print hong kim results
         print("i\tactual\t\tHK\t\terror")
         rel_error_HK = []
         for i in range(len(predicted_times_HK)):
             predicted = predicted_times_HK[i]
             actual = actual_times_all[i]
             rel_error_HK.append((predicted-actual)/actual)
-            #rel_error_HK.append(predicted-actual)
             print("%i\t%.7f\t%.7f\t%.7f" % (i, actual, predicted, rel_error_HK[i]))
+
         print("avg relative error HK: ", np.average(np.absolute(rel_error_HK))) 
         print("avg relative error LS: ", np.average(np.absolute(rel_error_lstsq)))
         print("med relative error LS: ", np.median(np.absolute(rel_error_lstsq)))
@@ -180,7 +150,6 @@ def main():
         for item in lstsq_weights:
             print("\t%e" % (item), end='')
         print()
-        #print(lstsq_weights)
 
 def unit_vector(vector):
     """ Returns the unit vector of the vector.  """
@@ -196,6 +165,14 @@ def cos_angle_btw(v1, v2):
     v2_u = unit_vector(v2)
     return np.dot(v1_u, v2_u)
 
+def get_cos_angles_bt_rows(A):
+    cos_angles = []
+    for row1 in range(len(A)):
+        for j in range(len(A)-1-row1):
+            row2 = row1+1+j
+            cos_angles.append(cos_angle_btw(A[row1], A[row2]))
+    return cos_angles
+
 def print_ptx_src_msg(knl_name):
     print("="*40+"PTX SOURCE")
     print("PTX source written to "+knl_name+".ptx")
@@ -203,6 +180,11 @@ def print_ptx_src_msg(knl_name):
     print("ptxas -v --gpu-name <compute capability> <filename.ptx>")
     print("For example, with compute capability 3.5, do:")
     print("ptxas -v --gpu-name sm_35 "+knl_name+".ptx")
+    print("="*40)
+
+def print_device_info(ctx):
+    print("="*40+"DEVICES")
+    print(ctx.get_info(cl.context_info.DEVICES))
     print("="*40)
 
 def print_Ay(A, y):
@@ -273,6 +255,11 @@ def update_results(A, A_new, y, y_new, predicted_HK, predicted_HK_new, actual_al
         y.append(copy.copy(y_new[row]))
         predicted_HK.append(copy.copy(predicted_HK_new[row]))
         actual_all.append(copy.copy(actual_new[row]))
+
+def divide_rows_by_weights(A, y):
+    for row in range(len(A)):
+        for col in range(len(A[0])):
+            A[row][col] = A[row][col]/y[row]
 
 def split_for_train_test(A, y):
 
@@ -380,15 +367,11 @@ def run_mm_trials(ctx, queue, nvals, configs_t, version):
             #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
             
             trial_times = []
-            for i in range(averaging_trials):
+            for i in range(averaging_trials+warmup_trials):
                 evt, (out,) = knl(queue, a=a_mat_dev, b=b_mat_dev, c=c_mat_dev)
                 evt.wait()
                 trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
-            avg_time = np.average(trial_times[2:])
-            '''
-            evt, (out,) = knl(queue, a=a_mat_dev, b=b_mat_dev, c=c_mat_dev)
-            evt.wait()
-            '''
+            avg_time = np.average(trial_times[warmup_trials:])
 
             gstats = GPUStats('TeslaK20')
             if BSIZEx == 8 or BSIZEx == 32:  # TODO fix hack
@@ -494,16 +477,12 @@ def run_axpy_trials(ctx, queue, nvals, configs_t):
             #'''
             
             trial_times = []
-            for i in range(averaging_trials):
+            for i in range(averaging_trials+warmup_trials):
                 evt, (out,) = knl(queue, x=x_vec_dev, y=y_vec_dev, z=z_vec_dev)
                 evt.wait()
                 trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
-            avg_time = np.average(trial_times[2:])
+            avg_time = np.average(trial_times[warmup_trials:])
             #print(n, BSIZEx, BSIZEy, trial_times)
-            '''
-            evt, (out,) = knl(queue, x=x_vec_dev, y=y_vec_dev, z=z_vec_dev)
-            evt.wait()
-            '''
 
             gstats = GPUStats('TeslaK20')
             reg32_per_thread = 20
@@ -587,15 +566,12 @@ def run_tp_trials(ctx, queue, nvals, configs_t, prefetch=True):
             #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
             
             trial_times = []
-            for i in range(averaging_trials):
+            for i in range(averaging_trials+warmup_trials):
                 evt, (out,) = knl(queue, a=a_mat_dev, b=b_mat_dev)
                 evt.wait()
                 trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
-            avg_time = np.average(trial_times[2:])
-            '''
-            evt, (out,) = knl(queue, a=a_mat_dev, b=b_mat_dev)
-            evt.wait()
-            '''
+            avg_time = np.average(trial_times[warmup_trials:])
+
             gstats = GPUStats('TeslaK20')
             if n % BSIZEx == 0 and n % BSIZEy == 0:
                 if prefetch:
@@ -704,18 +680,19 @@ def run_conv_trials(ctx, queue, nvals, configs_t):
             f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(sub_map, params)
             f32coal = f32coal_l + f32coal_s
             f32uncoal = f32uncoal_l + f32uncoal_s
-            print(n, BSIZEx, BSIZEy, flops/(n*n), f32coal_l/(n*n), f32coal_s/(n*n), f32uncoal_l/(n*n), f32uncoal_s/(n*n), barrier_ct,
-                  flops, f32coal_l, f32uncoal_l, f32coal_s, f32uncoal_s) 
+            #print(n, BSIZEx, BSIZEy, flops/(n*n), f32coal_l/(n*n), f32coal_s/(n*n),
+            #      f32uncoal_l/(n*n), f32uncoal_s/(n*n), barrier_ct,
+            #      flops, f32coal_l, f32uncoal_l, f32coal_s, f32uncoal_s) 
             # execute
             print("running kernel...")
             #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
             
             trial_times = []
-            for i in range(averaging_trials):
+            for i in range(averaging_trials+warmup_trials):
                 evt, (out,) = knl(queue, f=f_dev, img=img_dev, im_w=im_w, im_h=im_h, nfeats=nfeats, nimgs=nimgs)
                 evt.wait()
                 trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
-            avg_time = np.average(trial_times[2:])
+            avg_time = np.average(trial_times[warmup_trials:])
 
             gstats = GPUStats('TeslaK20')
             reg32_per_thread = 33
@@ -803,15 +780,12 @@ def run_empt_trials(ctx, queue, nvals, configs_t):
             #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
             
             trial_times = []
-            for i in range(averaging_trials):
+            for i in range(averaging_trials+warmup_trials):
                 evt, out = knl(queue)
                 evt.wait()
                 trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
-            avg_time = np.average(trial_times[2:])
-            '''
-            evt, out = knl(queue)
-            evt.wait()
-            '''
+            avg_time = np.average(trial_times[warmup_trials:])
+
             gstats = GPUStats('TeslaK20')
             reg32_per_thread = 2
             shared_mem_per_block = 0
@@ -895,15 +869,12 @@ def run_fd_trials(ctx, queue, nvals, configs_t):
             #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
             
             trial_times = []
-            for i in range(averaging_trials):
+            for i in range(averaging_trials+warmup_trials):
                 evt, (out,) = knl(queue, u=u_mat_dev)
                 evt.wait()
                 trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
-            avg_time = np.average(trial_times[2:])
-            '''
-            evt, (out,) = knl(queue, u=u_mat_dev)
-            evt.wait()
-            '''
+            avg_time = np.average(trial_times[warmup_trials:])
+
             gstats = GPUStats('TeslaK20')
             if n % BSIZEx == 0 and n % BSIZEy == 0:
                 reg32_per_thread = 14
