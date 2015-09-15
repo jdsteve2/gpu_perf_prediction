@@ -39,79 +39,129 @@ def main():
                 properties=cl.command_queue_properties.PROFILING_ENABLE)
     #print_device_info(ctx)
 
-    lstsq_A = []
-    #lstsq_y = []
-    predicted_times_HK = []
+    HK_predict_all = []
     actual_times_all = []
+    Atrain = []
+    ytrain = []
+    Atest = []
+    ytest = []
     trials_n = 4
 
     if run_mm:
         nvals = [2**(9+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
-        #'''
-        A_mm, predicted_mm, actual_mm = run_mm_trials(ctx, queue, nvals,
-                                                            configs_t, "allcoal")
-        update_results(lstsq_A, A_mm, predicted_times_HK,
-                       predicted_mm, actual_times_all, actual_mm)
         '''
-        A_mm2, predicted_mm2, actual_mm2 = run_mm_trials(ctx, queue, nvals,
+        A_mm, HK_predict_mm, actual_mm = run_mm_trials(ctx, queue, nvals,
+                                                            configs_t, "allcoal")
+        Atrain_mm, ytrain_mm, Atest_mm, ytest_mm = split_for_train_test(A_mm, actual_mm)
+        append_mats([Atrain, Atest, ytrain, ytest,
+                     actual_times_all, HK_predict_all],
+                    [Atrain_mm, Atest_mm, ytrain_mm, ytest_mm,
+                     actual_mm, HK_predict_mm])
+        '''
+        run_mm_trials(ctx, queue, nvals, configs_t, Atrain, Atest, ytrain, ytest,
+                      actual_times_all, HK_predict_all, 'split', 'allcoal')
+        '''
+        A_mm2, HK_predict_mm2, actual_mm2 = run_mm_trials(ctx, queue, nvals,
                                                             configs_t, "partcoal")
-        update_results(lstsq_A, A_mm2, predicted_times_HK,
-                       predicted_mm2, actual_times_all, actual_mm2)
+        update_results(lstsq_A, A_mm2, HK_predict_all,
+                       HK_predict_mm2, actual_times_all, actual_mm2)
         '''
     if run_axpy:
         nvals = [2**(25+x) for x in range(trials_n)]
         configs_t = [(64, 1), (128, 1), (256, 1), (512, 1), (1024, 1)]
         # TODO figure out problem with 64, 1 (why not slower?)
-        A_axpy, predicted_axpy, actual_axpy = run_axpy_trials(ctx, queue, nvals, configs_t)
-        update_results(lstsq_A, A_axpy, predicted_times_HK,
-                       predicted_axpy, actual_times_all, actual_axpy)
+        '''
+        A_axpy, HK_predict_axpy, actual_axpy = run_axpy_trials(ctx, queue, nvals, configs_t)
+        Atrain_axpy, ytrain_axpy, Atest_axpy, ytest_axpy = split_for_train_test(A_axpy, actual_axpy)
+        append_mats([Atrain, Atest, ytrain, ytest,
+                     actual_times_all, HK_predict_all],
+                    [Atrain_axpy, Atest_axpy, ytrain_axpy, ytest_axpy,
+                     actual_axpy, HK_predict_axpy])
+        '''
+        run_axpy_trials(ctx, queue, nvals, configs_t, Atrain, Atest, ytrain, ytest,
+                        actual_times_all, HK_predict_all, 'split')
+        '''
+        Atrain_axpy, ytrain_axpy, Atest_axpy, ytest_axpy = split_for_train_test(A_axpy, actual_axpy)
+        append_mats([Atrain, Atest, ytrain, ytest,
+                     actual_times_all, HK_predict_all],
+                    [Atrain_axpy, Atest_axpy, ytrain_axpy, ytest_axpy,
+                     actual_axpy, HK_predict_axpy])
+        '''
     if run_tp:
         nvals = [2**(10+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
-        A_tp, predicted_tp, actual_tp = run_tp_trials(ctx, queue, nvals, configs_t, prefetch=True)
-        update_results(lstsq_A, A_tp, predicted_times_HK,
-                       predicted_tp, actual_times_all, actual_tp)
-        A_tp2, predicted_tp2, actual_tp2 = run_tp_trials(ctx, queue, nvals, configs_t, prefetch=False)
-        update_results(lstsq_A, A_tp2, predicted_times_HK,
-                       predicted_tp2, actual_times_all, actual_tp2)
+        '''
+        A_tp, HK_predict_tp, actual_tp = run_tp_trials(ctx, queue, nvals, configs_t, prefetch=True)
+        A_tp2, HK_predict_tp2, actual_tp2 = run_tp_trials(ctx, queue, nvals, configs_t, prefetch=False)
+        Atrain_tp, ytrain_tp, Atest_tp, ytest_tp = split_for_train_test(A_tp, actual_tp)
+        Atrain_tp2, ytrain_tp2, Atest_tp2, ytest_tp2 = split_for_train_test(A_tp2, actual_tp2)
+        append_mats([Atrain, Atest, ytrain, ytest,
+                     actual_times_all, HK_predict_all],
+                    [Atrain_tp, Atest_tp, ytrain_tp, ytest_tp,
+                     actual_tp, HK_predict_tp])
+        append_mats([Atrain, Atest, ytrain, ytest,
+                     actual_times_all, HK_predict_all],
+                    [Atrain_tp2, Atest_tp2, ytrain_tp2, ytest_tp2,
+                     actual_tp2, HK_predict_tp2])
+        '''
+        run_tp_trials(ctx, queue, nvals, configs_t, Atrain, Atest, ytrain, ytest,
+                      actual_times_all, HK_predict_all, 'split', prefetch=True)
+        run_tp_trials(ctx, queue, nvals, configs_t, Atrain, Atest, ytrain, ytest,
+                      actual_times_all, HK_predict_all, 'split', prefetch=False)
     if run_conv:
         nvals = [2**(8+x) for x in range(trials_n+1)]
         configs_t = [(8, 8), (16, 16), (32, 32)]
-        A_conv, predicted_conv, actual_conv = run_conv_trials(ctx, queue, nvals, configs_t)
-        update_results(lstsq_A, A_conv, predicted_times_HK,
-                       predicted_conv, actual_times_all, actual_conv)
-    if run_fd:
-        nvals = [2**(10+x) for x in range(trials_n)]
-        configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
-        A_fd, predicted_fd, actual_fd = run_fd_trials(ctx, queue, nvals, configs_t)
-        update_results(lstsq_A, A_fd, predicted_times_HK,
-                       predicted_fd, actual_times_all, actual_fd)
+        '''
+        A_conv, HK_predict_conv, actual_conv = run_conv_trials(ctx, queue, nvals, configs_t)
+        Atrain_conv, ytrain_conv, Atest_conv, ytest_conv = split_for_train_test(A_conv, actual_conv)
+        append_mats([Atrain, Atest, ytrain, ytest,
+                     actual_times_all, HK_predict_all],
+                    [Atrain_conv, Atest_conv, ytrain_conv, ytest_conv,
+                     actual_conv, HK_predict_conv])
+        '''
+        run_conv_trials(ctx, queue, nvals, configs_t, Atrain, Atest, ytrain, ytest,
+                        actual_times_all, HK_predict_all, 'split')
     if run_empt:
         nvals = [2**(10+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
-        A_empt, predicted_empt, actual_empt = run_empt_trials(ctx, queue, nvals, configs_t)
-        update_results(lstsq_A, A_empt, predicted_times_HK,
-                       predicted_empt, actual_times_all, actual_empt)
+        '''
+        A_empt, HK_predict_empt, actual_empt = run_empt_trials(ctx, queue, nvals, configs_t)
+        Atrain_empt, ytrain_empt, Atest_empt, ytest_empt = split_for_train_test(A_empt, actual_empt)
+        append_mats([Atrain, Atest, ytrain, ytest,
+                     actual_times_all, HK_predict_all],
+                    [Atrain_empt, Atest_empt, ytrain_empt, ytest_empt,
+                     actual_empt, HK_predict_empt])
+        '''
+        run_empt_trials(ctx, queue, nvals, configs_t, Atrain, Atest, ytrain, ytest,
+                        actual_times_all, HK_predict_all, 'split')
+    if run_fd:
+        nvals = [2**(10+x) for x in range(trials_n)]
+        configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
+        '''
+        A_fd, HK_predict_fd, actual_fd = run_fd_trials(ctx, queue, nvals, configs_t)
+        Atrain_fd, ytrain_fd, Atest_fd, ytest_fd = split_for_train_test(A_fd, actual_fd)
+        append_mats([Atrain, Atest, ytrain, ytest,
+                     actual_times_all, HK_predict_all],
+                    [Atrain_fd, Atest_fd, ytrain_fd, ytest_fd,
+                     actual_fd, HK_predict_fd])
+        '''
+        run_fd_trials(ctx, queue, nvals, configs_t, Atrain, Atest, ytrain, ytest,
+                        actual_times_all, HK_predict_all, 'split')
 
     # least squares calculations
     if run_mm or run_axpy or run_tp or run_conv or run_empt or run_fd:
 
         # TODO, make copies or move pointers?
-        Atrain, ytrain, Atest, ytest = split_for_train_test(lstsq_A, actual_times_all)
-        #lstsq_weights, resid, q, q = np.linalg.lstsq(Atrain, ytrain)
+        #TODO figure out when I really need copy.deepcopy
 
+        # divide by runtime to minimize relative error rather than absolute error
         ones = np.ones(len(ytrain))
-        Atrain_for_relerr = copy.copy(Atrain)
-        #TODO figure out when I really need copy.copy)
-
-        # divide by runtime to minimize relative error
+        Atrain_for_relerr = copy.deepcopy(Atrain)
         divide_rows_by_weights(Atrain_for_relerr, ytrain)
+
         lstsq_weights, resid, q, q = np.linalg.lstsq(Atrain_for_relerr, ones)
-
         U, s, V = np.linalg.svd(Atrain_for_relerr, full_matrices=False)
-
-        #  TODO y and actual are same, redundant
         cos_angles = get_cos_angles_bt_rows(Atrain_for_relerr)
 
         #print("Least Squares Residual:\n", np.dot(Atrain, lstsq_weights)-ytrain)
@@ -131,8 +181,8 @@ def main():
         # print hong kim results
         print("i\tactual\t\tHK\t\terror")
         rel_error_HK = []
-        for i in range(len(predicted_times_HK)):
-            predicted = predicted_times_HK[i]
+        for i in range(len(HK_predict_all)):
+            predicted = HK_predict_all[i]
             actual = actual_times_all[i]
             rel_error_HK.append((predicted-actual)/actual)
             print("%i\t%.7f\t%.7f\t%.7f" % (i, actual, predicted, rel_error_HK[i]))
@@ -142,8 +192,7 @@ def main():
         print("med relative error LS: ", np.median(np.absolute(rel_error_lstsq)))
 
         print(np.average(cos_angles))
-
-        print_Ay(lstsq_A, actual_times_all)
+        print_Ay(Atrain, ytrain)
 
         print("Weights:")
         for item in lstsq_weights:
@@ -249,10 +298,23 @@ def update_LS_matrix(A, flops, intops, f32coal_l, f32coal_s, f32uncoal_l, f32unc
 
 def update_results(A, A_new, predicted_HK, predicted_HK_new, actual_all,
                    actual_new):
+    '''
     for row in range(len(A_new)):
-        A.append(copy.copy(A_new[row]))
-        predicted_HK.append(copy.copy(predicted_HK_new[row]))
-        actual_all.append(copy.copy(actual_new[row]))
+        A.append(copy.deepcopy(A_new[row]))
+        predicted_HK.append(copy.deepcopy(predicted_HK_new[row]))
+        actual_all.append(copy.deepcopy(actual_new[row]))
+    '''
+    append_mat(A, A_new)
+    append_mat(predicted_HK, predicted_HK_new)
+    append_mat(actual_all, actual_new)
+
+def append_mat(A1, A2):
+    for row in range(len(A2)):
+        A1.append(copy.deepcopy(A2[row]))
+
+def append_mats(mats_1, mats_2):
+    for i in range(len(mats_1)):
+        append_mat(mats_1[i], mats_2[i])        
 
 def divide_rows_by_weights(A, y):
     for row in range(len(A)):
@@ -268,17 +330,26 @@ def split_for_train_test(A, y):
 
     for row in range(len(A)):
         '''
-        if row % 2 == 0:
-            Atrain.append(copy.copy(A[row]))
-            ytrain.append(copy.copy(y[row]))
+        if row < len(A)-16:
+            Atrain.append(copy.deepcopy(A[row]))
+            ytrain.append(copy.deepcopy(y[row]))
         else:
-            Atest.append(copy.copy(A[row]))
-            ytest.append(copy.copy(y[row]))
+            Atest.append(copy.deepcopy(A[row]))
+            ytest.append(copy.deepcopy(y[row]))
         '''
-        Atrain.append(copy.copy(A[row]))
-        ytrain.append(copy.copy(y[row]))
-        Atest.append(copy.copy(A[row]))
-        ytest.append(copy.copy(y[row]))
+        '''
+        if row % 2 == 0:
+            Atrain.append(copy.deepcopy(A[row]))
+            ytrain.append(copy.deepcopy(y[row]))
+        else:
+            Atest.append(copy.deepcopy(A[row]))
+            ytest.append(copy.deepcopy(y[row]))
+
+        '''
+        Atrain.append(copy.deepcopy(A[row]))
+        ytrain.append(copy.deepcopy(y[row]))
+        Atest.append(copy.deepcopy(A[row]))
+        ytest.append(copy.deepcopy(y[row]))
         #'''
     return (Atrain, ytrain, Atest, ytest)
 
@@ -288,10 +359,12 @@ def ptx_dump(ctx, knl, n, bx, by):
     ptx_src_file = open("ptx_files/"+knl.name+"_"+str(n)+"_"+str(bx)+"_"+str(by)+".ptx", 'w')
     ptx_src_file.write(ptx_src)
 
-def run_mm_trials(ctx, queue, nvals, configs_t, version):
+def run_mm_trials(ctx, queue, nvals, configs_t,
+                  Atrain_all, Atest_all, ytrain_all, ytest_all,
+                  actual_times_all, HK_predict_all, train_test_config, version):
 
     A = []
-    predicted = []
+    HK_predict = []
     actual = []
     dtype = np.float32
 
@@ -389,7 +462,7 @@ def run_mm_trials(ctx, queue, nvals, configs_t, version):
             cycles = model.compute_total_cycles()
             #actual.append((evt.profile.END - evt.profile.START)*1e-9)
             actual.append(avg_time)
-            predicted.append(cycles/(gstats.sm_clock_freq*10**9))
+            HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
 
             '''
             print "actual runtime: ", actual[-1]
@@ -402,12 +475,30 @@ def run_mm_trials(ctx, queue, nvals, configs_t, version):
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
 
-    return (A, predicted, actual)
+    if train_test_config == 'split':
+        Atrain, ytrain, Atest, ytest = split_for_train_test(A, actual)
+        append_mats([Atrain_all, Atest_all, ytrain_all, ytest_all,
+                     actual_times_all, HK_predict_all],
+                    [Atrain, Atest, ytrain, ytest,
+                     actual, HK_predict])
+    if train_test_config == 'train':
+        append_mats([Atrain_all, ytrain_all,
+                     actual_times_all, HK_predict_all],
+                    [A, actual,
+                     actual, HK_predict])
+    if train_test_config == 'test':
+        append_mats([Atest_all, ytest_all,
+                     actual_times_all, HK_predict_all],
+                    [A, actual,
+                     actual, HK_predict])
+    #return (A, HK_predict, actual)
 
-def run_axpy_trials(ctx, queue, nvals, configs_t):
+def run_axpy_trials(ctx, queue, nvals, configs_t,
+                    Atrain_all, Atest_all, ytrain_all, ytest_all,
+                    actual_times_all, HK_predict_all, train_test_config):
 
     A = []
-    predicted = []
+    HK_predict = []
     actual = []
     dtype = np.float32
 
@@ -496,19 +587,38 @@ def run_axpy_trials(ctx, queue, nvals, configs_t):
 
             #actual.append((evt.profile.END - evt.profile.START)*1e-9)
             actual.append(avg_time)
-            predicted.append(cycles/(gstats.sm_clock_freq*10**9))
+            HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
 
             #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n/unroll,
                              np.dtype(dtype).itemsize, model)
 
-    return (A, predicted, actual)
+    if train_test_config == 'split':
+        Atrain, ytrain, Atest, ytest = split_for_train_test(A, actual)
+        append_mats([Atrain_all, Atest_all, ytrain_all, ytest_all,
+                     actual_times_all, HK_predict_all],
+                    [Atrain, Atest, ytrain, ytest,
+                     actual, HK_predict])
+    if train_test_config == 'train':
+        append_mats([Atrain_all, ytrain_all,
+                     actual_times_all, HK_predict_all],
+                    [A, actual,
+                     actual, HK_predict])
+    if train_test_config == 'test':
+        append_mats([Atest_all, ytest_all,
+                     actual_times_all, HK_predict_all],
+                    [A, actual,
+                     actual, HK_predict])
 
-def run_tp_trials(ctx, queue, nvals, configs_t, prefetch=True):
+    #return (A, HK_predict, actual)
+
+def run_tp_trials(ctx, queue, nvals, configs_t,
+                  Atrain_all, Atest_all, ytrain_all, ytest_all, actual_times_all,
+                  HK_predict_all, train_test_config, prefetch=True):
 
     A = []
-    predicted = []
+    HK_predict = []
     actual = []
     dtype = np.float32
 
@@ -557,6 +667,8 @@ def run_tp_trials(ctx, queue, nvals, configs_t, prefetch=True):
             #print "="*40+"TIMING RESULTS"
             print("running kernel...")
             #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
+            #if not prefetch:
+            #    knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
             
             trial_times = []
             for i in range(averaging_trials+warmup_trials):
@@ -564,7 +676,8 @@ def run_tp_trials(ctx, queue, nvals, configs_t, prefetch=True):
                 evt.wait()
                 trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
             avg_time = np.average(trial_times[warmup_trials:])
-
+            #if not prefetch:
+            #    1/0
             gstats = GPUStats('TeslaK20')
             if n % BSIZEx == 0 and n % BSIZEy == 0:
                 if prefetch:
@@ -593,19 +706,37 @@ def run_tp_trials(ctx, queue, nvals, configs_t, prefetch=True):
 
             #actual.append((evt.profile.END - evt.profile.START)*1e-9)
             actual.append(avg_time)
-            predicted.append(cycles/(gstats.sm_clock_freq*10**9))
+            HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
 
             #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
 
-    return (A, predicted, actual)
+    if train_test_config == 'split':
+        Atrain, ytrain, Atest, ytest = split_for_train_test(A, actual)
+        append_mats([Atrain_all, Atest_all, ytrain_all, ytest_all,
+                     actual_times_all, HK_predict_all],
+                    [Atrain, Atest, ytrain, ytest,
+                     actual, HK_predict])
+    if train_test_config == 'train':
+        append_mats([Atrain_all, ytrain_all,
+                     actual_times_all, HK_predict_all],
+                    [A, actual,
+                     actual, HK_predict])
+    if train_test_config == 'test':
+        append_mats([Atest_all, ytest_all,
+                     actual_times_all, HK_predict_all],
+                    [A, actual,
+                     actual, HK_predict])
+    #return (A, HK_predict, actual)
 
-def run_conv_trials(ctx, queue, nvals, configs_t):
+def run_conv_trials(ctx, queue, nvals, configs_t,
+                    Atrain_all, Atest_all, ytrain_all, ytest_all,
+                    actual_times_all, HK_predict_all, train_test_config):
 
     A = []
-    predicted = []
+    HK_predict = []
     actual = []
     dtype = np.float32
     ncolors = 3
@@ -717,18 +848,36 @@ def run_conv_trials(ctx, queue, nvals, configs_t):
 
             #actual.append((evt.profile.END - evt.profile.START)*1e-9)
             actual.append(avg_time)
-            predicted.append(cycles/(gstats.sm_clock_freq*10**9))
+            HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
             #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,      #TODO try total_threads for this
                              np.dtype(dtype).itemsize, model)
 
-    return (A, predicted, actual)
+    if train_test_config == 'split':
+        Atrain, ytrain, Atest, ytest = split_for_train_test(A, actual)
+        append_mats([Atrain_all, Atest_all, ytrain_all, ytest_all,
+                     actual_times_all, HK_predict_all],
+                    [Atrain, Atest, ytrain, ytest,
+                     actual, HK_predict])
+    if train_test_config == 'train':
+        append_mats([Atrain_all, ytrain_all,
+                     actual_times_all, HK_predict_all],
+                    [A, actual,
+                     actual, HK_predict])
+    if train_test_config == 'test':
+        append_mats([Atest_all, ytest_all,
+                     actual_times_all, HK_predict_all],
+                    [A, actual,
+                     actual, HK_predict])
+    #return (A, HK_predict, actual)
 
-def run_empt_trials(ctx, queue, nvals, configs_t):
+def run_empt_trials(ctx, queue, nvals, configs_t,
+                    Atrain_all, Atest_all, ytrain_all, ytest_all,
+                    actual_times_all, HK_predict_all, train_test_config):
 
     A = []
-    predicted = []
+    HK_predict = []
     actual = []
     dtype = np.float32
 
@@ -793,19 +942,37 @@ def run_empt_trials(ctx, queue, nvals, configs_t):
 
             #actual.append((evt.profile.END - evt.profile.START)*1e-9)
             actual.append(avg_time)
-            predicted.append(cycles/(gstats.sm_clock_freq*10**9))
+            HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
 
             #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
 
-    return (A, predicted, actual)
+    if train_test_config == 'split':
+        Atrain, ytrain, Atest, ytest = split_for_train_test(A, actual)
+        append_mats([Atrain_all, Atest_all, ytrain_all, ytest_all,
+                     actual_times_all, HK_predict_all],
+                    [Atrain, Atest, ytrain, ytest,
+                     actual, HK_predict])
+    if train_test_config == 'train':
+        append_mats([Atrain_all, ytrain_all,
+                     actual_times_all, HK_predict_all],
+                    [A, actual,
+                     actual, HK_predict])
+    if train_test_config == 'test':
+        append_mats([Atest_all, ytest_all,
+                     actual_times_all, HK_predict_all],
+                    [A, actual,
+                     actual, HK_predict])
+    #return (A, HK_predict, actual)
 
-def run_fd_trials(ctx, queue, nvals, configs_t):
+def run_fd_trials(ctx, queue, nvals, configs_t,
+                  Atrain_all, Atest_all, ytrain_all, ytest_all,
+                  actual_times_all, HK_predict_all, train_test_config):
 
     A = []
-    predicted = []
+    HK_predict = []
     actual = []
     dtype = np.float32
 
@@ -880,14 +1047,30 @@ def run_fd_trials(ctx, queue, nvals, configs_t):
 
             #actual.append((evt.profile.END - evt.profile.START)*1e-9)
             actual.append(avg_time)
-            predicted.append(cycles/(gstats.sm_clock_freq*10**9))
+            HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
 
             #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
 
-    return (A, predicted, actual)
+    if train_test_config == 'split':
+        Atrain, ytrain, Atest, ytest = split_for_train_test(A, actual)
+        append_mats([Atrain_all, Atest_all, ytrain_all, ytest_all,
+                     actual_times_all, HK_predict_all],
+                    [Atrain, Atest, ytrain, ytest,
+                     actual, HK_predict])
+    if train_test_config == 'train':
+        append_mats([Atrain_all, ytrain_all,
+                     actual_times_all, HK_predict_all],
+                    [A, actual,
+                     actual, HK_predict])
+    if train_test_config == 'test':
+        append_mats([Atest_all, ytest_all,
+                     actual_times_all, HK_predict_all],
+                    [A, actual,
+                     actual, HK_predict])
+    #return (A, HK_predict, actual)
 
 if __name__ == '__main__':
     main()
