@@ -32,6 +32,7 @@ compute_const_manually = False
 averaging_trials = 5
 warmup_trials = 2
 
+
 def main():
     # setup
     ctx = cl.create_some_context()
@@ -50,15 +51,6 @@ def main():
     if run_mm:
         nvals = [2**(9+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
-        '''
-        A_mm, HK_predict_mm, actual_mm = run_mm_trials(ctx, queue, nvals,
-                                                            configs_t, "allcoal")
-        Atrain_mm, ytrain_mm, Atest_mm, ytest_mm = split_for_train_test(A_mm, actual_mm)
-        append_mats([Atrain, Atest, ytrain, ytest,
-                     actual_times_all, HK_predict_all],
-                    [Atrain_mm, Atest_mm, ytrain_mm, ytest_mm,
-                     actual_mm, HK_predict_mm])
-        '''
         run_mm_trials(ctx, queue, nvals, configs_t, Atrain, Atest, ytrain, ytest,
                       actual_times_all, HK_predict_all, 'split', 'allcoal')
         '''
@@ -71,40 +63,11 @@ def main():
         nvals = [2**(25+x) for x in range(trials_n)]
         configs_t = [(64, 1), (128, 1), (256, 1), (512, 1), (1024, 1)]
         # TODO figure out problem with 64, 1 (why not slower?)
-        '''
-        A_axpy, HK_predict_axpy, actual_axpy = run_axpy_trials(ctx, queue, nvals, configs_t)
-        Atrain_axpy, ytrain_axpy, Atest_axpy, ytest_axpy = split_for_train_test(A_axpy, actual_axpy)
-        append_mats([Atrain, Atest, ytrain, ytest,
-                     actual_times_all, HK_predict_all],
-                    [Atrain_axpy, Atest_axpy, ytrain_axpy, ytest_axpy,
-                     actual_axpy, HK_predict_axpy])
-        '''
         run_axpy_trials(ctx, queue, nvals, configs_t, Atrain, Atest, ytrain, ytest,
                         actual_times_all, HK_predict_all, 'split')
-        '''
-        Atrain_axpy, ytrain_axpy, Atest_axpy, ytest_axpy = split_for_train_test(A_axpy, actual_axpy)
-        append_mats([Atrain, Atest, ytrain, ytest,
-                     actual_times_all, HK_predict_all],
-                    [Atrain_axpy, Atest_axpy, ytrain_axpy, ytest_axpy,
-                     actual_axpy, HK_predict_axpy])
-        '''
     if run_tp:
         nvals = [2**(10+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
-        '''
-        A_tp, HK_predict_tp, actual_tp = run_tp_trials(ctx, queue, nvals, configs_t, prefetch=True)
-        A_tp2, HK_predict_tp2, actual_tp2 = run_tp_trials(ctx, queue, nvals, configs_t, prefetch=False)
-        Atrain_tp, ytrain_tp, Atest_tp, ytest_tp = split_for_train_test(A_tp, actual_tp)
-        Atrain_tp2, ytrain_tp2, Atest_tp2, ytest_tp2 = split_for_train_test(A_tp2, actual_tp2)
-        append_mats([Atrain, Atest, ytrain, ytest,
-                     actual_times_all, HK_predict_all],
-                    [Atrain_tp, Atest_tp, ytrain_tp, ytest_tp,
-                     actual_tp, HK_predict_tp])
-        append_mats([Atrain, Atest, ytrain, ytest,
-                     actual_times_all, HK_predict_all],
-                    [Atrain_tp2, Atest_tp2, ytrain_tp2, ytest_tp2,
-                     actual_tp2, HK_predict_tp2])
-        '''
         run_tp_trials(ctx, queue, nvals, configs_t, Atrain, Atest, ytrain, ytest,
                       actual_times_all, HK_predict_all, 'split', prefetch=True)
         run_tp_trials(ctx, queue, nvals, configs_t, Atrain, Atest, ytrain, ytest,
@@ -112,40 +75,16 @@ def main():
     if run_conv:
         nvals = [2**(8+x) for x in range(trials_n+1)]
         configs_t = [(8, 8), (16, 16), (32, 32)]
-        '''
-        A_conv, HK_predict_conv, actual_conv = run_conv_trials(ctx, queue, nvals, configs_t)
-        Atrain_conv, ytrain_conv, Atest_conv, ytest_conv = split_for_train_test(A_conv, actual_conv)
-        append_mats([Atrain, Atest, ytrain, ytest,
-                     actual_times_all, HK_predict_all],
-                    [Atrain_conv, Atest_conv, ytrain_conv, ytest_conv,
-                     actual_conv, HK_predict_conv])
-        '''
         run_conv_trials(ctx, queue, nvals, configs_t, Atrain, Atest, ytrain, ytest,
                         actual_times_all, HK_predict_all, 'split')
     if run_empt:
         nvals = [2**(10+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
-        '''
-        A_empt, HK_predict_empt, actual_empt = run_empt_trials(ctx, queue, nvals, configs_t)
-        Atrain_empt, ytrain_empt, Atest_empt, ytest_empt = split_for_train_test(A_empt, actual_empt)
-        append_mats([Atrain, Atest, ytrain, ytest,
-                     actual_times_all, HK_predict_all],
-                    [Atrain_empt, Atest_empt, ytrain_empt, ytest_empt,
-                     actual_empt, HK_predict_empt])
-        '''
         run_empt_trials(ctx, queue, nvals, configs_t, Atrain, Atest, ytrain, ytest,
                         actual_times_all, HK_predict_all, 'split')
     if run_fd:
         nvals = [2**(10+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
-        '''
-        A_fd, HK_predict_fd, actual_fd = run_fd_trials(ctx, queue, nvals, configs_t)
-        Atrain_fd, ytrain_fd, Atest_fd, ytest_fd = split_for_train_test(A_fd, actual_fd)
-        append_mats([Atrain, Atest, ytrain, ytest,
-                     actual_times_all, HK_predict_all],
-                    [Atrain_fd, Atest_fd, ytrain_fd, ytest_fd,
-                     actual_fd, HK_predict_fd])
-        '''
         run_fd_trials(ctx, queue, nvals, configs_t, Atrain, Atest, ytrain, ytest,
                         actual_times_all, HK_predict_all, 'split')
 
@@ -165,7 +104,8 @@ def main():
         cos_angles = get_cos_angles_bt_rows(Atrain_for_relerr)
 
         #print("Least Squares Residual:\n", np.dot(Atrain, lstsq_weights)-ytrain)
-        print("Least Squares Residual:\n", np.dot(Atrain_for_relerr, lstsq_weights)-ytrain)
+        print("Least Squares Residual:\n",
+              np.dot(Atrain_for_relerr, lstsq_weights)-ytrain)
         print("Least Squares singular values:\n", s)
         print("="*40+"TIMING RESULTS")
 
@@ -176,7 +116,8 @@ def main():
             predicted_lstsq = np.dot(Atest[i], lstsq_weights)
             actual = ytest[i]
             rel_error_lstsq.append((predicted_lstsq-actual)/actual)
-            print("%i\t%.7f\t%.7f\t%.7f" % (i, actual, predicted_lstsq, rel_error_lstsq[i]))
+            print("%i\t%.7f\t%.7f\t%.7f" %
+                  (i, actual, predicted_lstsq, rel_error_lstsq[i]))
 
         # print hong kim results
         print("i\tactual\t\tHK\t\terror")
@@ -187,7 +128,7 @@ def main():
             rel_error_HK.append((predicted-actual)/actual)
             print("%i\t%.7f\t%.7f\t%.7f" % (i, actual, predicted, rel_error_HK[i]))
 
-        print("avg relative error HK: ", np.average(np.absolute(rel_error_HK))) 
+        print("avg relative error HK: ", np.average(np.absolute(rel_error_HK)))
         print("avg relative error LS: ", np.average(np.absolute(rel_error_lstsq)))
         print("med relative error LS: ", np.median(np.absolute(rel_error_lstsq)))
 
@@ -199,6 +140,7 @@ def main():
             print("\t%e" % (item), end='')
         print()
 
+
 def unit_vector(vector):
     """ Returns the unit vector of the vector.  """
     norm = np.linalg.norm(vector)
@@ -207,11 +149,13 @@ def unit_vector(vector):
     else:
         return vector / np.linalg.norm(vector)
 
+
 def cos_angle_btw(v1, v2):
     """ Returns the cosine of angle between vectors 'v1' and 'v2' """
     v1_u = unit_vector(v1)
     v2_u = unit_vector(v2)
     return np.dot(v1_u, v2_u)
+
 
 def get_cos_angles_bt_rows(A):
     cos_angles = []
@@ -220,6 +164,7 @@ def get_cos_angles_bt_rows(A):
             row2 = row1+1+j
             cos_angles.append(cos_angle_btw(A[row1], A[row2]))
     return cos_angles
+
 
 def print_ptx_src_msg(knl_name):
     print("="*40+"PTX SOURCE")
@@ -230,10 +175,12 @@ def print_ptx_src_msg(knl_name):
     print("ptxas -v --gpu-name sm_35 "+knl_name+".ptx")
     print("="*40)
 
+
 def print_device_info(ctx):
     print("="*40+"DEVICES")
     print(ctx.get_info(cl.context_info.DEVICES))
     print("="*40)
+
 
 def print_Ay(A, y):
     for row in range(len(A)):
@@ -245,6 +192,7 @@ def print_Ay(A, y):
             else:
                 print("%e\t" % (A[row][col]), end='')
         print("| %f" % (y[row]))
+
 
 def get_DRAM_f32_accesses(sub_map, param_dict):
     f32coal_l = sub_map.get(
@@ -265,24 +213,24 @@ def get_DRAM_f32_accesses(sub_map, param_dict):
                         ).eval_with_dict(param_dict)
     return (f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s)
 
+
 def get_32b_ops(op_map, param_dict):
     flops = op_map.get(
-                        np.dtype(np.float32),isl.PwQPolynomial('{ 0 }')
-                        ).eval_with_dict(param_dict)
+                       np.dtype(np.float32), isl.PwQPolynomial('{ 0 }')
+                       ).eval_with_dict(param_dict)
     iops = op_map.get(
-                        np.dtype(np.int32),isl.PwQPolynomial('{ 0 }')
-                        ).eval_with_dict(param_dict)
+                      np.dtype(np.int32), isl.PwQPolynomial('{ 0 }')
+                      ).eval_with_dict(param_dict)
     return (flops, iops)
 
-def update_LS_matrix(A, flops, intops, f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s,
+
+def update_LS_matrix(A, flops, intops,
+                     f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s,
                      barrier_ct, blocks, thread_work_units, itemsize, model):
 
-    reps_per_SM = math.ceil(blocks/(model.active_blocks_per_SM*
+    reps_per_SM = math.ceil(blocks/(model.active_blocks_per_SM *
                                     model.GPU_stats.SM_count))
     multiplier = reps_per_SM
-    #print(blocks, model.active_blocks_per_SM, model.GPU_stats.SM_count, multiplier)
-    #multiplier = math.ceil(blocks/model.GPU_stats.SM_count)
-    #multiplier = blocks
     # TODO assumes there are enough blocks to fully load all SMs
     A.append([multiplier*itemsize*flops/thread_work_units,
               multiplier*itemsize*intops/thread_work_units,
@@ -292,34 +240,33 @@ def update_LS_matrix(A, flops, intops, f32coal_l, f32coal_s, f32uncoal_l, f32unc
               multiplier*itemsize*f32coal_s/thread_work_units,
               multiplier*itemsize*min(f32uncoal_s, f32uncoal_l)/thread_work_units,
               multiplier*itemsize*min(f32coal_s, f32coal_l)/thread_work_units,
-              multiplier*barrier_ct]) 
+              multiplier*barrier_ct])
     if not compute_const_manually:
         A[-1].append(1.0)
 
+
 def update_results(A, A_new, predicted_HK, predicted_HK_new, actual_all,
                    actual_new):
-    '''
-    for row in range(len(A_new)):
-        A.append(copy.deepcopy(A_new[row]))
-        predicted_HK.append(copy.deepcopy(predicted_HK_new[row]))
-        actual_all.append(copy.deepcopy(actual_new[row]))
-    '''
     append_mat(A, A_new)
     append_mat(predicted_HK, predicted_HK_new)
     append_mat(actual_all, actual_new)
+
 
 def append_mat(A1, A2):
     for row in range(len(A2)):
         A1.append(copy.deepcopy(A2[row]))
 
+
 def append_mats(mats_1, mats_2):
     for i in range(len(mats_1)):
-        append_mat(mats_1[i], mats_2[i])        
+        append_mat(mats_1[i], mats_2[i])
+
 
 def divide_rows_by_weights(A, y):
     for row in range(len(A)):
         for col in range(len(A[0])):
             A[row][col] = A[row][col]/y[row]
+
 
 def split_for_train_test(A, y):
 
@@ -353,11 +300,14 @@ def split_for_train_test(A, y):
         #'''
     return (Atrain, ytrain, Atest, ytest)
 
+
 def ptx_dump(ctx, knl, n, bx, by):
     cknl = lp.compiled.CompiledKernel(ctx, knl)
     ptx_src = cknl.cl_kernel_info().cl_kernel.program.binaries[0]
-    ptx_src_file = open("ptx_files/"+knl.name+"_"+str(n)+"_"+str(bx)+"_"+str(by)+".ptx", 'w')
+    filename = "ptx_files/"+knl.name+"_"+str(n)+"_"+str(bx)+"_"+str(by)+".ptx", 'w'
+    ptx_src_file = open(filename)
     ptx_src_file.write(ptx_src)
+
 
 def run_mm_trials(ctx, queue, nvals, configs_t,
                   Atrain_all, Atest_all, ytrain_all, ytest_all,
@@ -379,7 +329,7 @@ def run_mm_trials(ctx, queue, nvals, configs_t,
             "{[i,j,k]: 0<=i,j,k<%d}" % n,
             [
                 "c[i, j] = sum(k, a[i, k]*b[k, j])"
-            ],[
+            ], [
                 lp.GlobalArg("a", dtype, shape=(n, n), order=order),
                 lp.GlobalArg("b", dtype, shape=(n, n), order=order),
                 lp.GlobalArg("c", dtype, shape=(n, n), order=order),
@@ -391,11 +341,15 @@ def run_mm_trials(ctx, queue, nvals, configs_t,
 
             knl = ref_knl
             if version == "allcoal":
-                knl = lp.split_iname(knl, "i", BSIZEy, outer_tag="g.0", inner_tag="l.1")
-                knl = lp.split_iname(knl, "j", BSIZEx, outer_tag="g.1", inner_tag="l.0")
+                knl = lp.split_iname(knl, "i", BSIZEy,
+                                     outer_tag="g.0", inner_tag="l.1")
+                knl = lp.split_iname(knl, "j", BSIZEx,
+                                     outer_tag="g.1", inner_tag="l.0")
             elif version == "partcoal":
-                knl = lp.split_iname(knl, "i", BSIZEy, outer_tag="g.0", inner_tag="l.0")
-                knl = lp.split_iname(knl, "j", BSIZEx, outer_tag="g.1", inner_tag="l.1")
+                knl = lp.split_iname(knl, "i", BSIZEy,
+                                     outer_tag="g.0", inner_tag="l.0")
+                knl = lp.split_iname(knl, "j", BSIZEx,
+                                     outer_tag="g.1", inner_tag="l.1")
             else:
                 1/0
                 # TODO error
@@ -417,7 +371,8 @@ def run_mm_trials(ctx, queue, nvals, configs_t,
             flops, iops = get_32b_ops(op_map, {'n': n})
 
             sub_map = get_DRAM_access_poly(knl)  # noqa
-            f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(sub_map, {'n': n})
+            f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
+                                                                  sub_map, {'n': n})
             f32coal = f32coal_l + f32coal_s
             f32uncoal = f32uncoal_l + f32uncoal_s
 
@@ -435,7 +390,7 @@ def run_mm_trials(ctx, queue, nvals, configs_t,
             #print "="*40+"TIMING RESULTS"
             print("running kernel...")
             #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
-            
+
             trial_times = []
             for i in range(averaging_trials+warmup_trials):
                 evt, (out,) = knl(queue, a=a_mat_dev, b=b_mat_dev, c=c_mat_dev)
@@ -453,14 +408,13 @@ def run_mm_trials(ctx, queue, nvals, configs_t,
 
             shared_mem_per_block = 4*ksplit*(BSIZEx+BSIZEy)
             total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
-            total_threads = total_blocks*BSIZEx*BSIZEy
+            total_threads = total_blocks*BSIZEx*BSIZEy  # TODO never used
             kstats = KernelStats(flops/(n*n), f32uncoal/(n*n), f32coal/(n*n),
                                  barrier_ct, reg32_per_thread, shared_mem_per_block)
             tconfig = ThreadConfig(BSIZEx*BSIZEy, total_blocks)
             model = PerfModel(gstats, kstats, tconfig,
                             np.dtype(dtype))
             cycles = model.compute_total_cycles()
-            #actual.append((evt.profile.END - evt.profile.START)*1e-9)
             actual.append(avg_time)
             HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
 
@@ -470,7 +424,6 @@ def run_mm_trials(ctx, queue, nvals, configs_t,
             print "total predicted execution cycles: ", cycles
             print "="*40
             '''
-            #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
@@ -491,7 +444,7 @@ def run_mm_trials(ctx, queue, nvals, configs_t,
                      actual_times_all, HK_predict_all],
                     [A, actual,
                      actual, HK_predict])
-    #return (A, HK_predict, actual)
+
 
 def run_axpy_trials(ctx, queue, nvals, configs_t,
                     Atrain_all, Atest_all, ytrain_all, ytest_all,
@@ -512,7 +465,7 @@ def run_axpy_trials(ctx, queue, nvals, configs_t,
             "[n] -> {[i]: 0<=i<%d}" % n,
             [
                 "z[i] = 5.0*x[i]+7.0*y[i]"
-            ],[
+            ], [
                 lp.GlobalArg("x", dtype, shape=n),
                 lp.GlobalArg("y", dtype, shape=n),
                 lp.GlobalArg("z", dtype, shape=n),
@@ -542,7 +495,8 @@ def run_axpy_trials(ctx, queue, nvals, configs_t,
             flops, iops = get_32b_ops(op_map, {'n': n})
             sub_map = get_DRAM_access_poly(knl)  # noqa
 
-            f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(sub_map, {'n': n})
+            f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
+                                                                  sub_map, {'n': n})
             f32coal = f32coal_l + f32coal_s
             f32uncoal = f32uncoal_l + f32uncoal_s
 
@@ -560,24 +514,18 @@ def run_axpy_trials(ctx, queue, nvals, configs_t,
             # -------
             print("running kernel...")
             #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
-            #'''
-            
+
             trial_times = []
             for i in range(averaging_trials+warmup_trials):
                 evt, (out,) = knl(queue, x=x_vec_dev, y=y_vec_dev, z=z_vec_dev)
                 evt.wait()
                 trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
             avg_time = np.average(trial_times[warmup_trials:])
-            #print(n, BSIZEx, BSIZEy, trial_times)
 
             gstats = GPUStats('TeslaK20')
             reg32_per_thread = 20
             shared_mem_per_block = 0
             total_blocks = math.ceil(n/(BSIZEx*unroll))
-            
-            #print(n, BSIZEx)
-            #print(flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
-            #      f32uncoal_s, barrier_ct, total_blocks, n/unroll)
             kstats = KernelStats(flops*unroll/n, f32uncoal*unroll/n,
                                  f32coal*unroll/n, barrier_ct, reg32_per_thread,
                                  shared_mem_per_block)
@@ -585,11 +533,9 @@ def run_axpy_trials(ctx, queue, nvals, configs_t,
             model = PerfModel(gstats, kstats, tconfig, np.dtype(dtype))
             cycles = model.compute_total_cycles()
 
-            #actual.append((evt.profile.END - evt.profile.START)*1e-9)
             actual.append(avg_time)
             HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
 
-            #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n/unroll,
                              np.dtype(dtype).itemsize, model)
@@ -611,7 +557,6 @@ def run_axpy_trials(ctx, queue, nvals, configs_t,
                     [A, actual,
                      actual, HK_predict])
 
-    #return (A, HK_predict, actual)
 
 def run_tp_trials(ctx, queue, nvals, configs_t,
                   Atrain_all, Atest_all, ytrain_all, ytest_all, actual_times_all,
@@ -630,7 +575,7 @@ def run_tp_trials(ctx, queue, nvals, configs_t,
                 "{[i,j]: 0<=i,j<%d}" % n,
                 [
                     "b[i, j] = a[j, i]"
-                ],[
+                ], [
                     lp.GlobalArg("a", dtype, shape=(n, n), order=order),
                     lp.GlobalArg("b", dtype, shape=(n, n), order=order),
                 ],
@@ -659,7 +604,8 @@ def run_tp_trials(ctx, queue, nvals, configs_t,
             flops, iops = get_32b_ops(op_map, {'n': n})
 
             sub_map = get_DRAM_access_poly(knl)  # noqa
-            f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(sub_map, {'n': n})
+            f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
+                                                                  sub_map, {'n': n})
             f32coal = f32coal_l + f32coal_s
             f32uncoal = f32uncoal_l + f32uncoal_s
             # execute
@@ -669,7 +615,7 @@ def run_tp_trials(ctx, queue, nvals, configs_t,
             #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
             #if not prefetch:
             #    knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
-            
+
             trial_times = []
             for i in range(averaging_trials+warmup_trials):
                 evt, (out,) = knl(queue, a=a_mat_dev, b=b_mat_dev)
@@ -696,7 +642,7 @@ def run_tp_trials(ctx, queue, nvals, configs_t,
                 shared_mem_per_block = 0
             # TODO why is HK way  off on the non-prefetch version?
             total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
-            total_threads = total_blocks*BSIZEx*BSIZEy
+            total_threads = total_blocks*BSIZEx*BSIZEy  # TODO unused
             kstats = KernelStats(flops/(n*n), f32uncoal/(n*n), f32coal/(n*n),
                                  barrier_ct, reg32_per_thread, shared_mem_per_block)
             tconfig = ThreadConfig(BSIZEx*BSIZEy, total_blocks)
@@ -704,7 +650,6 @@ def run_tp_trials(ctx, queue, nvals, configs_t,
                             np.dtype(dtype))
             cycles = model.compute_total_cycles()
 
-            #actual.append((evt.profile.END - evt.profile.START)*1e-9)
             actual.append(avg_time)
             HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
 
@@ -729,7 +674,7 @@ def run_tp_trials(ctx, queue, nvals, configs_t,
                      actual_times_all, HK_predict_all],
                     [A, actual,
                      actual, HK_predict])
-    #return (A, HK_predict, actual)
+
 
 def run_conv_trials(ctx, queue, nvals, configs_t,
                     Atrain_all, Atest_all, ytrain_all, ytest_all,
@@ -776,18 +721,23 @@ def run_conv_trials(ctx, queue, nvals, configs_t,
             im_h = n
             nfeats = 3
             nimgs = 3
-            f_dev = cl.clrandom.rand(queue, (nfeats, 2*f_w+1, 2*f_w+1, ncolors), dtype=dtype)
-            img_dev = cl.clrandom.rand(queue, (nimgs+1, n+2*f_w, n+2*f_w, ncolors), dtype=dtype)
+            f_dev = cl.clrandom.rand(queue, (nfeats, 2*f_w+1, 2*f_w+1, ncolors),
+                                     dtype=dtype)
+            img_dev = cl.clrandom.rand(queue, (nimgs+1, n+2*f_w, n+2*f_w, ncolors),
+                                       dtype=dtype)
 
-            knl = lp.split_iname(knl, "im_x", BSIZEx, outer_tag="g.0", inner_tag="l.0")
-            knl = lp.split_iname(knl, "im_y", BSIZEy, outer_tag="g.1", inner_tag="l.1")
+            knl = lp.split_iname(knl, "im_x", BSIZEx,
+                                 outer_tag="g.0", inner_tag="l.0")
+            knl = lp.split_iname(knl, "im_y", BSIZEy,
+                                 outer_tag="g.1", inner_tag="l.1")
             knl = lp.tag_inames(knl, dict(ifeat="g.2"))
             knl = lp.add_prefetch(knl, "f[ifeat,:,:,:]")
             knl = lp.add_prefetch(knl, "img", "im_x_inner, im_y_inner, f_x, f_y")
 
-            params=dict(im_w=im_w, im_h=im_h, f_w=f_w, nfeats=nfeats, nimgs=nimgs)
+            params = dict(im_w=im_w, im_h=im_h, f_w=f_w, nfeats=nfeats, nimgs=nimgs)
 
-            #check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=True, parameters=params)
+            #check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=True,
+            #                            parameters=params)
             #print "Correctness check: \n", check
             # use ptx src to determine resource usage
             #ptx_dump(ctx, knl, n, BSIZEx, BSIZEy)
@@ -797,62 +747,44 @@ def run_conv_trials(ctx, queue, nvals, configs_t,
 
             op_map = get_op_poly(knl)
             flops, iops = get_32b_ops(op_map, params)
-            #TODO figure out why block sizes that don't fit perfeclty lead to more total flops/iops
+            #TODO why do blk sizes that don't fit perfecty increase total flops/iops
             sub_map = get_DRAM_access_poly(knl)  # noqa
-            f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(sub_map, params)
+            f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
+                                                                    sub_map, params)
             f32coal = f32coal_l + f32coal_s
             f32uncoal = f32uncoal_l + f32uncoal_s
-            #print(n, BSIZEx, BSIZEy, flops/(n*n), f32coal_l/(n*n), f32coal_s/(n*n),
-            #      f32uncoal_l/(n*n), f32uncoal_s/(n*n), barrier_ct,
-            #      flops, f32coal_l, f32uncoal_l, f32coal_s, f32uncoal_s) 
+
             # execute
             print("running kernel...")
             #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
-            
+
             trial_times = []
             for i in range(averaging_trials+warmup_trials):
-                evt, (out,) = knl(queue, f=f_dev, img=img_dev, im_w=im_w, im_h=im_h, nfeats=nfeats, nimgs=nimgs)
+                evt, (out,) = knl(queue, f=f_dev, img=img_dev, im_w=im_w, im_h=im_h,
+                                  nfeats=nfeats, nimgs=nimgs)
                 evt.wait()
                 trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
             avg_time = np.average(trial_times[warmup_trials:])
 
             gstats = GPUStats('TeslaK20')
             reg32_per_thread = 33
-            shared_mem_per_block = (ncolors*(f_w*2+1)*(f_w*2+1)+
-                                    (BSIZEx+f_w*2)*(BSIZEy+f_w*2)
-                                     )*np.dtype(dtype).itemsize
+            shared_mem_per_block = (ncolors * (f_w*2+1) * (f_w*2+1) +
+                                    (BSIZEx+f_w*2) * (BSIZEy+f_w*2)
+                                    ) * np.dtype(dtype).itemsize
             total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
-            total_threads = total_blocks*BSIZEx*BSIZEy
-            #print(op_map.get(
-            #            np.dtype(np.float32),isl.PwQPolynomial('{ 0 }')
-            #            ))
-            #print(sub_map)
-            '''
-            f32_l = sub_map.get(
-                                (np.dtype(np.float32), 'uniform', 'load'),
-                                isl.PwQPolynomial('{ 0 }')
-                                ).eval_with_dict(params)
-            f32_s = sub_map.get(
-                                (np.dtype(np.float32), 'uniform', 'store'),
-                                isl.PwQPolynomial('{ 0 }')
-                                ).eval_with_dict(params)
-            f32uniform = f32_l+f32_s
-            print(f32coal, f32uncoal, f32uniform, f32coal+f32uncoal+f32uniform)
-            '''
-            #print(n*n, flops, flops/(total_threads))
+            total_threads = total_blocks*BSIZEx*BSIZEy  # TODO unused
             kstats = KernelStats(flops/(n*n), f32uncoal/(n*n), f32coal/(n*n),
                                  barrier_ct, reg32_per_thread, shared_mem_per_block)
             tconfig = ThreadConfig(BSIZEx*BSIZEy, total_blocks)
             model = PerfModel(gstats, kstats, tconfig, np.dtype(dtype))
             cycles = model.compute_total_cycles()
 
-            #actual.append((evt.profile.END - evt.profile.START)*1e-9)
             actual.append(avg_time)
             HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
-            #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
-                             f32uncoal_s, barrier_ct, total_blocks, n*n,      #TODO try total_threads for this
+                             f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
+            #TODO try total_threads for n*n
 
     if train_test_config == 'split':
         Atrain, ytrain, Atest, ytest = split_for_train_test(A, actual)
@@ -870,7 +802,7 @@ def run_conv_trials(ctx, queue, nvals, configs_t,
                      actual_times_all, HK_predict_all],
                     [A, actual,
                      actual, HK_predict])
-    #return (A, HK_predict, actual)
+
 
 def run_empt_trials(ctx, queue, nvals, configs_t,
                     Atrain_all, Atest_all, ytrain_all, ytest_all,
@@ -905,18 +837,15 @@ def run_empt_trials(ctx, queue, nvals, configs_t,
             flops, iops = get_32b_ops(op_map, params)
 
             sub_map = get_DRAM_access_poly(knl)  # noqa
-            f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(sub_map, params)
-            f32coal = f32coal_l + f32coal_s
-            f32uncoal = f32uncoal_l + f32uncoal_s
-
-            #print("<debug> ", barrier_ct, flops, iops, f32coal, f32uncoal)
+            f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
+                                                                    sub_map, params)
 
             # execute
             # -------
             #print "="*40+"TIMING RESULTS"
             print("running kernel...")
             #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
-            
+
             trial_times = []
             for i in range(averaging_trials+warmup_trials):
                 evt, out = knl(queue)
@@ -927,24 +856,19 @@ def run_empt_trials(ctx, queue, nvals, configs_t,
             gstats = GPUStats('TeslaK20')
             reg32_per_thread = 2
             shared_mem_per_block = 0
-            #total_blocks = 0
-            #total_threads = 0
             total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
-            total_threads = total_blocks*BSIZEx*BSIZEy
+            total_threads = total_blocks*BSIZEx*BSIZEy  # TODO unused
             # TODO actually increase threads/blocks but expect 0 result
             kstats = KernelStats(0, 0, 0, barrier_ct, reg32_per_thread,
                                  shared_mem_per_block)
-            #tconfig = ThreadConfig(0, total_blocks)
             tconfig = ThreadConfig(BSIZEx*BSIZEy, total_blocks)
             model = PerfModel(gstats, kstats, tconfig,
                             np.dtype(dtype))
             cycles = model.compute_total_cycles()
 
-            #actual.append((evt.profile.END - evt.profile.START)*1e-9)
             actual.append(avg_time)
             HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
 
-            #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
@@ -965,7 +889,7 @@ def run_empt_trials(ctx, queue, nvals, configs_t,
                      actual_times_all, HK_predict_all],
                     [A, actual,
                      actual, HK_predict])
-    #return (A, HK_predict, actual)
+
 
 def run_fd_trials(ctx, queue, nvals, configs_t,
                   Atrain_all, Atest_all, ytrain_all, ytest_all,
@@ -998,7 +922,8 @@ def run_fd_trials(ctx, queue, nvals, configs_t,
                     ["i_inner", "j_inner"],
                     fetch_bounding_box=True)
 
-            #check = lp.auto_test_vs_ref(ref_knl, ctx, knl, parameters=dict(n=n), print_code=True)
+            #check = lp.auto_test_vs_ref(ref_knl, ctx, knl, parameters=dict(n=n),
+            #                            print_code=True)
             #print "Correctness check: \n", check
 
             # use ptx src to determine resource usage
@@ -1012,7 +937,8 @@ def run_fd_trials(ctx, queue, nvals, configs_t,
             flops, iops = get_32b_ops(op_map, params)
 
             sub_map = get_DRAM_access_poly(knl)  # noqa
-            f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(sub_map, params)
+            f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
+                                                                    sub_map, params)
             f32coal = f32coal_l + f32coal_s
             f32uncoal = f32uncoal_l + f32uncoal_s
 
@@ -1021,7 +947,7 @@ def run_fd_trials(ctx, queue, nvals, configs_t,
             #print "="*40+"TIMING RESULTS"
             print("running kernel...")
             #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
-            
+
             trial_times = []
             for i in range(averaging_trials+warmup_trials):
                 evt, (out,) = knl(queue, u=u_mat_dev)
@@ -1037,7 +963,7 @@ def run_fd_trials(ctx, queue, nvals, configs_t,
 
             shared_mem_per_block = 4*(BSIZEx+2)*(BSIZEy+2)
             total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
-            total_threads = total_blocks*BSIZEx*BSIZEy
+            total_threads = total_blocks*BSIZEx*BSIZEy  # TODO unused
             kstats = KernelStats(flops/(n*n), f32uncoal/(n*n), f32coal/(n*n),
                                  barrier_ct, reg32_per_thread, shared_mem_per_block)
             tconfig = ThreadConfig(BSIZEx*BSIZEy, total_blocks)
@@ -1045,11 +971,9 @@ def run_fd_trials(ctx, queue, nvals, configs_t,
                             np.dtype(dtype))
             cycles = model.compute_total_cycles()
 
-            #actual.append((evt.profile.END - evt.profile.START)*1e-9)
             actual.append(avg_time)
             HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
 
-            #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
@@ -1070,7 +994,6 @@ def run_fd_trials(ctx, queue, nvals, configs_t,
                      actual_times_all, HK_predict_all],
                     [A, actual,
                      actual, HK_predict])
-    #return (A, HK_predict, actual)
 
 if __name__ == '__main__':
     main()
