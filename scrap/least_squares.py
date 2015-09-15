@@ -8,7 +8,9 @@ import pyopencl.clrandom  # noqa
 from loopy.statistics import get_op_poly, get_DRAM_access_poly, get_barrier_poly
 import sys
 sys.path.append("../performance_model")
+sys.path.append("../utils")
 from perf_model import GPUStats, KernelStats, ThreadConfig, PerfModel
+from utils import *
 import islpy as isl
 import math
 import copy
@@ -140,7 +142,7 @@ def main():
             print("\t%e" % (item), end='')
         print()
 
-
+'''
 def unit_vector(vector):
     """ Returns the unit vector of the vector.  """
     norm = np.linalg.norm(vector)
@@ -222,7 +224,7 @@ def get_32b_ops(op_map, param_dict):
                       np.dtype(np.int32), isl.PwQPolynomial('{ 0 }')
                       ).eval_with_dict(param_dict)
     return (flops, iops)
-
+'''
 
 def update_LS_matrix(A, flops, intops,
                      f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s,
@@ -244,14 +246,7 @@ def update_LS_matrix(A, flops, intops,
     if not compute_const_manually:
         A[-1].append(1.0)
 
-
-def update_results(A, A_new, predicted_HK, predicted_HK_new, actual_all,
-                   actual_new):
-    append_mat(A, A_new)
-    append_mat(predicted_HK, predicted_HK_new)
-    append_mat(actual_all, actual_new)
-
-
+'''
 def append_mat(A1, A2):
     for row in range(len(A2)):
         A1.append(copy.deepcopy(A2[row]))
@@ -266,7 +261,7 @@ def divide_rows_by_weights(A, y):
     for row in range(len(A)):
         for col in range(len(A[0])):
             A[row][col] = A[row][col]/y[row]
-
+'''
 
 def split_for_train_test(A, y):
 
@@ -300,14 +295,14 @@ def split_for_train_test(A, y):
         #'''
     return (Atrain, ytrain, Atest, ytest)
 
-
+'''
 def ptx_dump(ctx, knl, n, bx, by):
     cknl = lp.compiled.CompiledKernel(ctx, knl)
     ptx_src = cknl.cl_kernel_info().cl_kernel.program.binaries[0]
     filename = "ptx_files/"+knl.name+"_"+str(n)+"_"+str(bx)+"_"+str(by)+".ptx", 'w'
     ptx_src_file = open(filename)
     ptx_src_file.write(ptx_src)
-
+'''
 
 def run_mm_trials(ctx, queue, nvals, configs_t,
                   Atrain_all, Atest_all, ytrain_all, ytest_all,
