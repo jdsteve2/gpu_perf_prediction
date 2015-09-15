@@ -4,6 +4,7 @@ import numpy as np
 import islpy as isl
 import pyopencl as cl
 import copy
+import loopy as lp
 
 
 def unit_vector(vector):
@@ -105,8 +106,8 @@ def divide_rows_by_weights(A, y):
 def ptx_dump(ctx, knl, n, bx, by):
     cknl = lp.compiled.CompiledKernel(ctx, knl)
     ptx_src = cknl.cl_kernel_info().cl_kernel.program.binaries[0]
-    filename = "ptx_files/"+knl.name+"_"+str(n)+"_"+str(bx)+"_"+str(by)+".ptx", 'w'
-    ptx_src_file = open(filename)
+    filename = "ptx_files/"+knl.name+"_"+str(n)+"_"+str(bx)+"_"+str(by)+".ptx"
+    ptx_src_file = open(filename, 'w')
     ptx_src_file.write(ptx_src)
 
 
