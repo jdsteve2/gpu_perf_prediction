@@ -14,19 +14,22 @@ from utils import *
 import math
 import copy
 
-run_mm = False
+run_flops = False
+run_subs = False
+
 run_axpy = False
 run_tp = False
 run_conv = False
 run_empt = False
 run_fd = False
 
-run_mm = True
-run_axpy = True
-run_tp = True
-run_conv = True
+run_flops = True
+run_subs = True
+#run_axpy = True
+#run_tp = True
+#run_conv = True
 run_empt = True
-run_fd = True
+#run_fd = True
 
 warm_up_gpu = False
 compute_const_manually = False
@@ -49,17 +52,16 @@ def main():
     ytest = []
     trials_n = 4
 
-    if run_mm:
-        nvals = [2**(9+x) for x in range(trials_n)]
+    if run_flops:
+        nvals = [2**(11+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
-        run_mm_trials(ctx, queue, nvals, configs_t, Atrain, Atest, ytrain, ytest,
-                      actual_times_all, HK_predict_all, 'split', 'allcoal')
-        '''
-        A_mm2, HK_predict_mm2, actual_mm2 = run_mm_trials(ctx, queue, nvals,
-                                                            configs_t, "partcoal")
-        update_results(lstsq_A, A_mm2, HK_predict_all,
-                       HK_predict_mm2, actual_times_all, actual_mm2)
-        '''
+        run_flops_trials(ctx, queue, nvals, configs_t, Atrain, Atest, ytrain, ytest,
+                      actual_times_all, HK_predict_all, 'split')
+    if run_subs:
+        nvals = [2**(10+x) for x in range(trials_n)]
+        configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
+        run_subs_trials(ctx, queue, nvals, configs_t, Atrain, Atest, ytrain, ytest,
+                      actual_times_all, HK_predict_all, 'split')
     if run_axpy:
         nvals = [2**(25+x) for x in range(trials_n)]
         configs_t = [(64, 1), (128, 1), (256, 1), (512, 1), (1024, 1)]
@@ -82,7 +84,7 @@ def main():
         nvals = [2**(10+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
         run_empt_trials(ctx, queue, nvals, configs_t, Atrain, Atest, ytrain, ytest,
-                        actual_times_all, HK_predict_all, 'split')
+                        actual_times_all, HK_predict_all, 'train')
     if run_fd:
         nvals = [2**(10+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
@@ -90,7 +92,7 @@ def main():
                         actual_times_all, HK_predict_all, 'split')
 
     # least squares calculations
-    if run_mm or run_axpy or run_tp or run_conv or run_empt or run_fd:
+    if run_flops or run_axpy or run_tp or run_conv or run_empt or run_fd:
 
         # TODO, make copies or move pointers?
         #TODO figure out when I really need copy.deepcopy
@@ -207,9 +209,9 @@ def update_lstsq_mats(Atrain_all, Atest_all, ytrain_all, ytest_all,
                      actual, HK_predict])
 
 
-def run_mm_trials(ctx, queue, nvals, configs_t,
+def run_flops_trials(ctx, queue, nvals, configs_t,
                   Atrain_all, Atest_all, ytrain_all, ytest_all,
-                  actual_times_all, HK_predict_all, train_test_config, version):
+                  actual_times_all, HK_predict_all, train_test_config):
     A = []
     HK_predict = []
     actual = []
@@ -217,57 +219,80 @@ def run_mm_trials(ctx, queue, nvals, configs_t,
 
     #TODO figure out smem usage issue
     for n in nvals:
+        #a_mat_dev = cl.clrandom.rand(queue, (n, n, n), dtype=dtype)
+        #b_mat_dev = cl.clrandom.rand(queue, (n, n, n), dtype=dtype)
         a_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=dtype)
         b_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=dtype)
-        c_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=dtype)
-        order = "C"
+        #g_mat_dev = cl.clrandom.rand(queue, (n, n, n), dtype=dtype)
+        #h_mat_dev = cl.clrandom.rand(queue, (n, n, n+1), dtype=dtype)
+
+
         knl = lp.make_kernel(
-            "{[i,j,k]: 0<=i,j,k<%d}" % n,
-            [
-                "c[i, j] = sum(k, a[i, k]*b[k, j])"
-            ], [
-                lp.GlobalArg("a", dtype, shape=(n, n), order=order),
-                lp.GlobalArg("b", dtype, shape=(n, n), order=order),
-                lp.GlobalArg("c", dtype, shape=(n, n), order=order),
-            ], name="matmul")
+                "[n,l] -> {[i,j]: 0<=i<n and 0<=j<l}",
+                [
+                    """
+                    c[i, j] = 4.7*((a[i,j]+7.2)*4.2+(b[i,j]-76)/3.0)+7.8
+                    """
+                ],
+                name="basic_flops", assumptions="n,l >= 1")
+        '''
+        knl = lp.make_kernel(
+                "[n,m,l] -> {[i,k,j]: 0<=i<n and 0<=k<m and 0<=j<l}",
+                [
+                    """
+                    c[i, j, k] = a[i,j,k]*b[i,j,k]/3.0+a[i,j,k]
+                    """
+                ],
+                name="basic", assumptions="n,m,l >= 1")
+        knl = lp.make_kernel(
+                "[n,m,l] -> {[i,k,j]: 0<=i<n and 0<=k<m and 0<=j<l}",
+                [
+                    """
+                    c[i, j, k] = a[i,j,k]*b[i,j,k]/3.0+a[i,j,k]
+                    e[i, j, k+1] = g[i,j,k]*h[i,j,k+1]
+                    """
+                ],
+                name="basic", assumptions="n,m,l >= 1")
+        knl = lp.make_kernel(
+                "[n,m,l] -> {[i,k,j]: 0<=i<n and 0<=k<m and 0<=j<l}",
+                [
+                    """
+                    c[i, j, k] = a[i,j,k]*b[i,j,k]/3.0
+                    e[i, j, k+1] = g[i,j,k]*h[i,j,k+1]
+                    """
+                ],
+                name="basic", assumptions="n,m,l >= 1")
+        '''
+        #knl = lp.add_and_infer_dtypes(knl,
+        #                    dict(a=dtype, b=dtype, g=dtype, h=dtype))
+        knl = lp.add_and_infer_dtypes(knl,
+                            dict(a=dtype, b=dtype))
         ref_knl = knl
 
         for BSIZEx, BSIZEy in configs_t:
             knl = ref_knl
-            if version == "allcoal":
-                knl = lp.split_iname(knl, "i", BSIZEy,
-                                     outer_tag="g.0", inner_tag="l.1")
-                knl = lp.split_iname(knl, "j", BSIZEx,
-                                     outer_tag="g.1", inner_tag="l.0")
-            elif version == "partcoal":
-                knl = lp.split_iname(knl, "i", BSIZEy,
-                                     outer_tag="g.0", inner_tag="l.0")
-                knl = lp.split_iname(knl, "j", BSIZEx,
-                                     outer_tag="g.1", inner_tag="l.1")
-            else:
-                1/0
-                # TODO error
-            ksplit = BSIZEy
-            knl = lp.split_iname(knl, "k", ksplit)
-            knl = lp.add_prefetch(knl, "a", ["k_inner", "i_inner"])
-            knl = lp.add_prefetch(knl, "b", ["j_inner", "k_inner", ])
+            knl = lp.split_iname(knl, "i", BSIZEy,
+                                 outer_tag="g.0", inner_tag="l.1")
+            knl = lp.split_iname(knl, "j", BSIZEx,
+                                 outer_tag="g.1", inner_tag="l.0")
 
-            #check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=True)
+            params = dict(n=n, m=n, l=n)
+            #check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=True,
+            #                            parameters=params)
             #print "Correctness check: \n", check
             # use ptx src to determine resource usage
-
             #ptx_dump(ctx, knl, n, BSIZEx, BSIZEy)
-
             barrier_poly = get_barrier_poly(knl)
-            barrier_ct = barrier_poly.eval_with_dict({'n': n})
+            barrier_ct = barrier_poly.eval_with_dict(params)
             op_map = get_op_poly(knl)
-            flops, iops = get_32b_ops(op_map, {'n': n})
+            flops, iops = get_32b_ops(op_map, params)
             sub_map = get_DRAM_access_poly(knl)  # noqa
             f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
-                                                                  sub_map, {'n': n})
+                                                                  sub_map, params)
             f32coal = f32coal_l + f32coal_s
             f32uncoal = f32uncoal_l + f32uncoal_s
-
+            #print(sub_map)
+            print(f32coal/(n*n), f32uncoal/(n*n), flops/(n*n))
             '''
             print_ptx_src_msg(knl.name)
             print "="*40+"KERNEL STATS"
@@ -284,20 +309,125 @@ def run_mm_trials(ctx, queue, nvals, configs_t,
 
             trial_times = []
             for i in range(averaging_trials+warmup_trials):
-                evt, (out,) = knl(queue, a=a_mat_dev, b=b_mat_dev, c=c_mat_dev)
+                #evt, out = knl(queue, a=a_mat_dev, b=b_mat_dev,
+                #                  g=g_mat_dev, h=h_mat_dev)
+                evt, out = knl(queue, a=a_mat_dev, b=b_mat_dev)
                 evt.wait()
                 trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
             avg_time = np.average(trial_times[warmup_trials:])
+            #print(trial_times)
+            #print(avg_time)
 
             gstats = GPUStats('TeslaK20')
-            if BSIZEx == 8 or BSIZEx == 32:  # TODO fix hack
-                reg32_per_thread = 25
-            elif BSIZEx == 24:
-                reg32_per_thread = 18
-            elif BSIZEx == 16:
-                reg32_per_thread = 22
+            reg32_per_thread = 9
 
-            shared_mem_per_block = 4*ksplit*(BSIZEx+BSIZEy)
+            shared_mem_per_block = 0
+            total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
+            total_threads = total_blocks*BSIZEx*BSIZEy  # TODO never used
+            kstats = KernelStats(flops/(n*n), f32uncoal/(n*n), f32coal/(n*n),
+                                 barrier_ct, reg32_per_thread, shared_mem_per_block)
+            tconfig = ThreadConfig(BSIZEx*BSIZEy, total_blocks)
+            model = PerfModel(gstats, kstats, tconfig,
+                            np.dtype(dtype))
+            cycles = model.compute_total_cycles()
+            actual.append(avg_time)
+            HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
+
+            '''
+            print "actual runtime: ", actual[-1]
+            print "total predicted time: ", predicted[-1]
+            print "total predicted execution cycles: ", cycles
+            print "="*40
+            '''
+            update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
+                             f32uncoal_s, barrier_ct, total_blocks, n*n,
+                             np.dtype(dtype).itemsize, model)
+
+    update_lstsq_mats(Atrain_all, Atest_all, ytrain_all, ytest_all,
+                      actual_times_all, HK_predict_all,
+                      A, actual, HK_predict, train_test_config)
+
+
+def run_subs_trials(ctx, queue, nvals, configs_t,
+                  Atrain_all, Atest_all, ytrain_all, ytest_all,
+                  actual_times_all, HK_predict_all, train_test_config):
+    A = []
+    HK_predict = []
+    actual = []
+    dtype = np.float32
+
+    for n in nvals:
+        a_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=dtype)
+        b_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=dtype)
+        d_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=dtype)
+        e_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=dtype)
+
+        knl = lp.make_kernel(
+                "[n,l] -> {[i,j]: 0<=i<n and 0<=j<l}",
+                [
+                    """
+                    c[i, j] = 4.7*((a[i,j]+d[i,j])*4.2+(b[i,j]-e[i,j])/3.0)+7.8
+                    """
+                ],
+                name="basic_subs", assumptions="n,l >= 1")
+        #knl = lp.add_and_infer_dtypes(knl,
+        #                    dict(a=dtype, b=dtype, g=dtype, h=dtype))
+        knl = lp.add_and_infer_dtypes(knl,
+                            dict(a=dtype, b=dtype, d=dtype, e=dtype))
+        ref_knl = knl
+
+        for BSIZEx, BSIZEy in configs_t:
+            knl = ref_knl
+            knl = lp.split_iname(knl, "i", BSIZEy,
+                                 outer_tag="g.0", inner_tag="l.1")
+            knl = lp.split_iname(knl, "j", BSIZEx,
+                                 outer_tag="g.1", inner_tag="l.0")
+
+            params = dict(n=n, m=n, l=n)
+            #check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=True,
+            #                            parameters=params)
+            #print "Correctness check: \n", check
+            # use ptx src to determine resource usage
+            ptx_dump(ctx, knl, n, BSIZEx, BSIZEy)
+            barrier_poly = get_barrier_poly(knl)
+            barrier_ct = barrier_poly.eval_with_dict(params)
+            op_map = get_op_poly(knl)
+            flops, iops = get_32b_ops(op_map, params)
+            sub_map = get_DRAM_access_poly(knl)  # noqa
+            f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
+                                                                  sub_map, params)
+            f32coal = f32coal_l + f32coal_s
+            f32uncoal = f32uncoal_l + f32uncoal_s
+            #print(sub_map)
+            print(f32coal/(n*n), f32uncoal/(n*n), flops/(n*n))
+            '''
+            print_ptx_src_msg(knl.name)
+            print "="*40+"KERNEL STATS"
+            print "barrier count: ", barrier_ct
+            print "flops: ", flops
+            print(sub_map)
+            print "="*40
+            '''
+
+            # execute
+            #print "="*40+"TIMING RESULTS"
+            print("running kernel...")
+            #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
+
+            trial_times = []
+            for i in range(averaging_trials+warmup_trials):
+                evt, out = knl(queue, a=a_mat_dev, b=b_mat_dev, d=d_mat_dev,
+                               e=e_mat_dev)
+                evt.wait()
+                trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
+            avg_time = np.average(trial_times[warmup_trials:])
+            #print(trial_times)
+            #print(avg_time)
+
+            gstats = GPUStats('TeslaK20')
+            reg32_per_thread = 13
+
+            shared_mem_per_block = 0
             total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
             total_threads = total_blocks*BSIZEx*BSIZEy  # TODO never used
             kstats = KernelStats(flops/(n*n), f32uncoal/(n*n), f32coal/(n*n),
