@@ -123,6 +123,35 @@ class GPUStats(object):
             self.shared_mem_per_SM = 49152
             self.shared_mem_alloc_size = 256
             self.warp_alloc_granularity = 4
+        elif (gpu_name == 'TeslaC2070'):
+            self.threads_per_warp = 32
+            self.issue_cycles = 4  # TODO what is this again?
+            self.sm_clock_freq = 1.15
+            self.mem_bandwidth = 144
+
+            #TODO correct this:
+            self.roundtrip_DRAM_access_latency = 400  #TODO just guessed
+
+            #TODO correct this:
+            self.departure_del_coal = 1  # TODO Is this correct??
+
+            #TODO correct this:
+            self.departure_del_uncoal = 38  # TODO Is this correct?
+
+            self.mem_trans_per_warp_coal = 1  # TODO Is this correct?
+            self.mem_trans_per_warp_uncoal = 32  # TODO check on this
+            self.SM_count = 56
+
+            # for occupancy
+            self.max_blocks_per_SM = 8
+            self.max_threads_per_SM = 1536 
+            self.max_warps_per_SM = 48
+            self.reg32_per_SM = 65536
+            self.reg_alloc_unit_size = 64
+            self.reg_alloc_granularity = 'warp'
+            self.shared_mem_per_SM = 49152
+            self.shared_mem_alloc_size = 128
+            self.warp_alloc_granularity = 2
         else:
             print "Error: unknown hardware"
         #TODO use compute capability to get some of these numbers
