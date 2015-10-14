@@ -264,8 +264,6 @@ def run_varyflops_trials(ctx, queue, nvals, configs_t,
             #print "Correctness check: \n", check
             # use ptx src to determine resource usage
             #ptx_dump(ctx, knl, n, BSIZEx, BSIZEy)
-            print(knl)
-            1/0
             barrier_poly = get_barrier_poly(knl)
             barrier_ct = barrier_poly.eval_with_dict(params)
             op_map = get_op_poly(knl)
@@ -277,6 +275,9 @@ def run_varyflops_trials(ctx, queue, nvals, configs_t,
             f32uncoal = f32uncoal_l + f32uncoal_s
             #print(sub_map)
             #print(f32coal/(n*n), f32uncoal/(n*n))
+            print(knl)
+            print(f32coal/(n*n), f32uncoal/(n*n))
+            1/0
             '''
             print_ptx_src_msg(knl.name)
             print "="*40+"KERNEL STATS"
