@@ -87,6 +87,88 @@ def get_32b_ops(op_map, param_dict):
     return (flops, iops)
 
 
+def get_32b_ops_all(op_map, param_dict):
+    typef32 = np.dtype(np.float32)
+    typei32 = np.dtype(np.int32)
+    total = 0
+    for (dtype, optype) in op_map:
+        if dtype == typef32 or dtype == typei32:
+            total += op_map[(dtype, optype)].eval_with_dict(param_dict)
+    return total
+
+
+def get_32b_flops_all(op_map, param_dict):
+    typef32 = np.dtype(np.float32)
+    total = 0
+    for (dtype, optype) in op_map:
+        if dtype == typef32:
+            total += op_map[(dtype, optype)].eval_with_dict(param_dict)
+    return total
+
+
+def get_32b_amd_ops(op_map, param_dict):
+    typef32 = np.dtype(np.float32)
+    typei32 = np.dtype(np.int32)
+    zero_poly = isl.PwQPolynomial('{ 0 }')
+    op_counts = []
+    #addf32
+    op_counts.append(op_map.get(
+                               (typef32, 'add'), zero_poly
+                               ).eval_with_dict(param_dict))
+    #subf32 
+    op_counts[-1] += op_map.get(
+                               (typef32, 'sub'), zero_poly
+                               ).eval_with_dict(param_dict)
+    #mulf32
+    op_counts.append(op_map.get(
+                               (typef32, 'mul'), zero_poly
+                               ).eval_with_dict(param_dict))
+    #divf32
+    op_counts.append(op_map.get(
+                               (typef32, 'div'), zero_poly
+                               ).eval_with_dict(param_dict))
+    #addi32
+    op_counts.append(op_map.get(
+                               (typei32, 'add'), zero_poly
+                               ).eval_with_dict(param_dict))
+    #subi32
+    op_counts[-1] += op_map.get(
+                               (typei32, 'sub'), zero_poly
+                               ).eval_with_dict(param_dict)
+    #muli32
+    op_counts.append(op_map.get(
+                               (typei32, 'mul'), zero_poly
+                               ).eval_with_dict(param_dict))
+    #divi32
+    op_counts.append(op_map.get(
+                               (typei32, 'div'), zero_poly
+                               ).eval_with_dict(param_dict))
+    return op_counts
+
+
+def get_32b_amd_flops(op_map, param_dict):
+    typef32 = np.dtype(np.float32)
+    zero_poly = isl.PwQPolynomial('{ 0 }')
+    op_counts = []
+    #addf32
+    op_counts.append(op_map.get(
+                               (typef32, 'add'), zero_poly
+                               ).eval_with_dict(param_dict))
+    #subf32 
+    op_counts[-1] += op_map.get(
+                               (typef32, 'sub'), zero_poly
+                               ).eval_with_dict(param_dict)
+    #mulf32
+    op_counts.append(op_map.get(
+                               (typef32, 'mul'), zero_poly
+                               ).eval_with_dict(param_dict))
+    #divf32
+    op_counts.append(op_map.get(
+                               (typef32, 'div'), zero_poly
+                               ).eval_with_dict(param_dict))
+    return op_counts
+
+
 def append_mat(A1, A2):
     for row in range(len(A2)):
         A1.append(copy.deepcopy(A2[row]))

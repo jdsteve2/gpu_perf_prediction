@@ -6,6 +6,7 @@ import pyopencl as cl
 import pyopencl.array
 import pyopencl.clrandom  # noqa
 from loopy.statistics import get_op_poly, get_DRAM_access_poly, get_barrier_poly
+from loopy.statistics import get_op_poly2
 import sys
 sys.path.append("../performance_model")
 sys.path.append("../utils")
@@ -24,7 +25,7 @@ run_empt = False
 run_fd = False
 
 run_flops = True
-#run_subs = True
+run_subs = True
 #run_axpy = True
 #run_tp = True
 #run_conv = True
@@ -161,6 +162,28 @@ def add_row_to_LS_mat(A, flops, intops,
               multiplier*itemsize*min(f32uncoal_s, f32uncoal_l)/thread_work_units,
               multiplier*itemsize*min(f32coal_s, f32coal_l)/thread_work_units,
               multiplier*barrier_ct])
+    if not compute_const_manually:
+        A[-1].append(1.0)
+
+
+def add_row_to_LS_mat2(A, op_array,
+                     f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s,
+                     barrier_ct, blocks, thread_work_units, itemsize, model):
+
+    reps_per_SM = math.ceil(blocks/(model.active_blocks_per_SM *
+                                    model.GPU_stats.SM_count))
+    multiplier = reps_per_SM
+    new_LS_entry = [multiplier*itemsize*ops/thread_work_units
+                         for ops in op_array]
+    new_LS_entry.append(multiplier*itemsize*f32uncoal_l/thread_work_units)
+    new_LS_entry.append(multiplier*itemsize*f32coal_l/thread_work_units)
+    new_LS_entry.append(multiplier*itemsize*f32uncoal_s/thread_work_units)
+    new_LS_entry.append(multiplier*itemsize*f32coal_s/thread_work_units)
+    new_LS_entry.append(multiplier*itemsize*min(f32uncoal_s, f32uncoal_l)/thread_work_units)
+    new_LS_entry.append(multiplier*itemsize*min(f32coal_s, f32coal_l)/thread_work_units)
+    new_LS_entry.append(multiplier*barrier_ct)
+    # TODO assumes there are enough blocks to fully load all SMs
+    A.append(new_LS_entry)
     if not compute_const_manually:
         A[-1].append(1.0)
 
@@ -333,6 +356,39 @@ def run_flops_trials(ctx, queue, nvals, configs_t,
                     ],
                     name="vary_flops", assumptions="n,l >= 1")
                    )
+        knls.append(
+                    lp.make_kernel(
+                    "[n,l] -> {[i,j]: 0<=i<n and 0<=j<l}",
+                    [
+                        """
+                        d[i,j] = (((2.5*a[i,j]-6.2)*3.9+(7.2*b[i,j]+3.4)/3.1)/2.0+(4.5*c[i,j]+4.1)/2.1+7.1)-2.6
+                        h[i,j] = (((8.2*e[i,j]-8.1)*3.8+(3.2*f[i,j]+3.5)/3.2)/3.0+(6.4*g[i,j]-3.1)/2.2+7.2)-2.7
+                        """
+                    ],
+                    name="vary_flops", assumptions="n,l >= 1")
+                   )
+        knls.append(
+                    lp.make_kernel(
+                    "[n,l] -> {[i,j]: 0<=i<n and 0<=j<l}",
+                    [
+                        """
+                        d[i,j] = (((2.5*a[i,j]/6.2)*3.9+(7.2*b[i,j]/3.4)/3.1)/2.0+(4.5/c[i,j]+4.1)/2.1+7.1)*2.6
+                        h[i,j] = (((8.2*e[i,j]/8.1)*3.8+(3.2*f[i,j]/3.5)/3.2)/3.0+(6.4/g[i,j]-3.1)/2.2+7.2)*2.7
+                        """
+                    ],
+                    name="vary_flops", assumptions="n,l >= 1")
+                   )
+        knls.append(
+                    lp.make_kernel(
+                    "[n,l] -> {[i,j]: 0<=i<n and 0<=j<l}",
+                    [
+                        """
+                        d[i,j] = (((2.5*a[i,j]/6.2)*3.9*(7.2*b[i,j]/3.4)*3.1)/2.0+(4.5/c[i,j]*4.1)/2.1/7.1)*2.6
+                        h[i,j] = (((8.2*e[i,j]/8.1)*3.8*(3.2*f[i,j]/3.5)*3.2)/3.0+(6.4/g[i,j]*3.1)/2.2/7.2)*2.7
+                        """
+                    ],
+                    name="vary_flops", assumptions="n,l >= 1")
+                   )
         '''
         knl = lp.make_kernel(
                 "[n,l] -> {[i,j]: 0<=i<n and 0<=j<l}",
@@ -399,13 +455,26 @@ def run_flops_trials(ctx, queue, nvals, configs_t,
                 barrier_ct = barrier_poly.eval_with_dict(params)
                 op_map = get_op_poly(knl)
                 flops, iops = get_32b_ops(op_map, params)
+
+                op_map2 = get_op_poly2(knl)
+                #amd_op32 = get_32b_amd_ops(op_map2, params)
+                amd_flop32 = get_32b_amd_flops(op_map2, params)
+                other_flop32 = get_32b_flops_all(op_map2, params) - sum(amd_flop32)
+                if flops != sum(amd_flop32) + other_flop32: #TODO remove after debug
+                    print("<debug> PROBLEM!, ops don't add up: ",
+                          flops, sum(amd_flop32), other_flop32)
+
                 sub_map = get_DRAM_access_poly(knl)  # noqa
                 f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
                                                                       sub_map, params)
                 f32coal = f32coal_l + f32coal_s
                 f32uncoal = f32uncoal_l + f32uncoal_s
+                if f32uncoal != 0:
+                    print(f32uncoal_l, f32uncoal_s)
+                    print(knl)
+                    1/0
                 #print(sub_map)
-                print(f32coal/(n*n), f32uncoal/(n*n), flops/(n*n))
+                #print(f32coal/(n*n), f32uncoal/(n*n), flops/(n*n))
                 '''
                 print_ptx_src_msg(knl.name)
                 print "="*40+"KERNEL STATS"
@@ -452,9 +521,17 @@ def run_flops_trials(ctx, queue, nvals, configs_t,
                 print "total predicted execution cycles: ", cycles
                 print "="*40
                 '''
+                '''
                 add_row_to_LS_mat(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                                  f32uncoal_s, barrier_ct, total_blocks, n*n,
                                  np.dtype(dtype).itemsize, model)
+                '''
+                ops = copy.deepcopy(amd_flop32)
+                ops.append(other_flop32)
+                add_row_to_LS_mat2(A, ops, f32coal_l, f32coal_s, f32uncoal_l,
+                                 f32uncoal_s, barrier_ct, total_blocks, n*n,
+                                 np.dtype(dtype).itemsize, model)
+
 
     update_lstsq_mats(Atrain_all, Atest_all, ytrain_all, ytest_all,
                       actual_times_all, HK_predict_all,
@@ -469,98 +546,264 @@ def run_subs_trials(ctx, queue, nvals, configs_t,
     actual = []
     dtype = np.float32
 
+    #TODO figure out smem usage issue
     for n in nvals:
+        #a_mat_dev = cl.clrandom.rand(queue, (n, n, n), dtype=dtype)
+        #b_mat_dev = cl.clrandom.rand(queue, (n, n, n), dtype=dtype)
         a_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=dtype)
         b_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=dtype)
+        c_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=dtype)
         d_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=dtype)
         e_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=dtype)
+        f_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=dtype)
+        g_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=dtype)
+        h_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=dtype)
+        p_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=dtype)
+        q_mat_dev = cl.clrandom.rand(queue, (n, n), dtype=dtype)
+        #g_mat_dev = cl.clrandom.rand(queue, (n, n, n), dtype=dtype)
+        #h_mat_dev = cl.clrandom.rand(queue, (n, n, n+1), dtype=dtype)
+
+        knls = []
 
         knl = lp.make_kernel(
-                "[n,l] -> {[i,j]: 0<=i<n and 0<=j<l}",
-                [
-                    """
-                    c[i, j] = 4.7*((a[i,j]+d[i,j])*4.2+(b[i,j]-e[i,j])/3.0)+7.8
-                    """
-                ],
-                name="basic_subs", assumptions="n,l >= 1")
+                    "[n,l] -> {[i,j]: 0<=i<n and 0<=j<l}",
+                    [
+                        """
+                        d[i,j] = a[i,j]+1.2
+                        """
+                    ],
+                    name="vary_subs", assumptions="n,l >= 1")
+        knl = lp.add_and_infer_dtypes(knl,
+                dict(a=dtype))
+        matlist = dict(a=a_mat_dev, d=d_mat_dev)
+        knls.append((knl, matlist))
+        knl = lp.make_kernel(
+                    "[n,l] -> {[i,j]: 0<=i<n and 0<=j<l}",
+                    [
+                        """
+                        d[i,j] = a[i,j]+b[i,j]+1.2
+                        """
+                    ],
+                    name="vary_subs", assumptions="n,l >= 1")
+        knl = lp.add_and_infer_dtypes(knl,
+                dict(a=dtype, b=dtype))
+        matlist = dict(a=a_mat_dev, b=b_mat_dev, d=d_mat_dev)
+        knls.append((knl, matlist))
+        knl = lp.make_kernel(
+                    "[n,l] -> {[i,j]: 0<=i<n and 0<=j<l}",
+                    [
+                        """
+                        d[i,j] = a[i,j]+b[i,j]+c[i,j]+1.2
+                        """
+                    ],
+                    name="vary_subs", assumptions="n,l >= 1")
+        knl = lp.add_and_infer_dtypes(knl,
+                dict(a=dtype, b=dtype, c=dtype))
+        matlist = dict(a=a_mat_dev, b=b_mat_dev, c=c_mat_dev,
+                       d=d_mat_dev)
+        knls.append((knl, matlist))
+        knl = lp.make_kernel(
+                    "[n,l] -> {[i,j]: 0<=i<n and 0<=j<l}",
+                    [
+                        """
+                        d[i,j] = a[i,j]+b[i,j]+c[i,j]+1.2
+                        h[i,j] = e[i,j]+1.3
+                        """
+                    ],
+                    name="vary_subs", assumptions="n,l >= 1")
+        knl = lp.add_and_infer_dtypes(knl,
+                dict(a=dtype, b=dtype, c=dtype,
+                     e=dtype))
+        matlist = dict(a=a_mat_dev, b=b_mat_dev, c=c_mat_dev,
+                       d=d_mat_dev, e=e_mat_dev, h=h_mat_dev)
+        knls.append((knl, matlist))
+        knl = lp.make_kernel(
+                    "[n,l] -> {[i,j]: 0<=i<n and 0<=j<l}",
+                    [
+                        """
+                        d[i,j] = a[i,j]+b[i,j]+c[i,j]+1.2
+                        h[i,j] = e[i,j]+f[i,j]+1.3
+                        """
+                    ],
+                    name="vary_subs", assumptions="n,l >= 1")
+        knl = lp.add_and_infer_dtypes(knl,
+                dict(a=dtype, b=dtype, c=dtype,
+                     e=dtype, f=dtype))
+        matlist = dict(a=a_mat_dev, b=b_mat_dev, c=c_mat_dev,
+                       d=d_mat_dev, e=e_mat_dev, f=f_mat_dev,
+                       h=h_mat_dev)
+        knls.append((knl, matlist))
+        knl = lp.make_kernel(
+                    "[n,l] -> {[i,j]: 0<=i<n and 0<=j<l}",
+                    [
+                        """
+                        d[i,j] = a[i,j]+b[i,j]+c[i,j]+1.2
+                        h[i,j] = e[i,j]+f[i,j]+g[i,j]+1.3
+                        """
+                    ],
+                    name="vary_subs", assumptions="n,l >= 1")
+        knl = lp.add_and_infer_dtypes(knl,
+                dict(a=dtype, b=dtype, c=dtype,
+                     e=dtype, f=dtype, g=dtype))
+        matlist = dict(a=a_mat_dev, b=b_mat_dev, c=c_mat_dev,
+                       d=d_mat_dev, e=e_mat_dev, f=f_mat_dev,
+                       g=g_mat_dev, h=h_mat_dev)
+        knls.append((knl, matlist))
+        knl = lp.make_kernel(
+                    "[n,l] -> {[i,j]: 0<=i<n and 0<=j<l}",
+                    [
+                        """
+                        d[i,j] = a[i,j]+b[i,j]+c[i,j]+p[i,j]+1.2
+                        h[i,j] = e[i,j]+f[i,j]+g[i,j]+1.3
+                        """
+                    ],
+                    name="vary_subs", assumptions="n,l >= 1")
+        knl = lp.add_and_infer_dtypes(knl,
+                dict(a=dtype, b=dtype, c=dtype,
+                     e=dtype, f=dtype, g=dtype,
+                     p=dtype))   # TODO fix this hack
+        matlist = dict(a=a_mat_dev, b=b_mat_dev, c=c_mat_dev,
+                       d=d_mat_dev, e=e_mat_dev, f=f_mat_dev,
+                       g=g_mat_dev, h=h_mat_dev, p=p_mat_dev) # TODO add new items to old dict instead
+        knls.append((knl, matlist))
+        knl = lp.make_kernel(
+                    "[n,l] -> {[i,j]: 0<=i<n and 0<=j<l}",
+                    [
+                        """
+                        d[i,j] = a[i,j]+b[i,j]+c[i,j]+p[i,j]+1.2
+                        h[i,j] = e[i,j]+f[i,j]+g[i,j]+q[i,j]+1.3
+                        """
+                    ],
+                    name="vary_subs", assumptions="n,l >= 1")
+        knl = lp.add_and_infer_dtypes(knl,
+                dict(a=dtype, b=dtype, c=dtype,
+                     e=dtype, f=dtype, g=dtype,
+                     p=dtype, q=dtype))
+        matlist = dict(a=a_mat_dev, b=b_mat_dev, c=c_mat_dev,
+                       d=d_mat_dev, e=e_mat_dev, f=f_mat_dev,
+                       g=g_mat_dev, h=h_mat_dev, p=p_mat_dev,
+                       q=q_mat_dev)
+        knls.append((knl, matlist))
         #knl = lp.add_and_infer_dtypes(knl,
         #                    dict(a=dtype, b=dtype, g=dtype, h=dtype))
-        knl = lp.add_and_infer_dtypes(knl,
-                            dict(a=dtype, b=dtype, d=dtype, e=dtype))
-        ref_knl = knl
+        '''
+        for knl in knls:
+            knl = lp.add_and_infer_dtypes(knl,
+                        dict(a=dtype, b=dtype, c=dtype, e=dtype, f=dtype, g=dtype))
+        '''
+        #TODO pull things out of loops that only need to happen once
+        #ref_knls = copy.deepcopy(knls)
+        ref_knls = []
+        for item in knls:
+            ref_knls.append(item)  # make sure this actually copies
 
         for BSIZEx, BSIZEy in configs_t:
-            knl = ref_knl
-            knl = lp.split_iname(knl, "i", BSIZEy,
-                                 outer_tag="g.0", inner_tag="l.1")
-            knl = lp.split_iname(knl, "j", BSIZEx,
-                                 outer_tag="g.1", inner_tag="l.0")
+            #knls = copy.deepcopy(ref_knls) # TODO something better/faster than DC?
+            for i, item in enumerate(ref_knls):
+                knls[i] = item  # make sure this actually copies
+            for knl, matlist in knls:
+                '''
+                knl = lp.add_and_infer_dtypes(knl,
+                        dict(b=dtype, c=dtype,
+                             e=dtype, f=dtype, g=dtype,
+                             p=dtype, q=dtype))
+                '''
+                knl = lp.split_iname(knl, "i", BSIZEy,
+                                     outer_tag="g.0", inner_tag="l.1")
+                knl = lp.split_iname(knl, "j", BSIZEx,
+                                     outer_tag="g.1", inner_tag="l.0")
 
-            params = dict(n=n, m=n, l=n)
-            #check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=True,
-            #                            parameters=params)
-            #print "Correctness check: \n", check
-            # use ptx src to determine resource usage
-            ptx_dump(ctx, knl, n, BSIZEx, BSIZEy)
-            barrier_poly = get_barrier_poly(knl)
-            barrier_ct = barrier_poly.eval_with_dict(params)
-            op_map = get_op_poly(knl)
-            flops, iops = get_32b_ops(op_map, params)
-            sub_map = get_DRAM_access_poly(knl)  # noqa
-            f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
-                                                                  sub_map, params)
-            f32coal = f32coal_l + f32coal_s
-            f32uncoal = f32uncoal_l + f32uncoal_s
-            #print(sub_map)
-            print(f32coal/(n*n), f32uncoal/(n*n), flops/(n*n))
-            '''
-            print_ptx_src_msg(knl.name)
-            print "="*40+"KERNEL STATS"
-            print "barrier count: ", barrier_ct
-            print "flops: ", flops
-            print(sub_map)
-            print "="*40
-            '''
+                params = dict(n=n, m=n, l=n)
+                #check = lp.auto_test_vs_ref(ref_knl, ctx, knl, print_code=True,
+                #                            parameters=params)
+                #print "Correctness check: \n", check
+                # use ptx src to determine resource usage
+                #ptx_dump(ctx, knl, n, BSIZEx, BSIZEy)
+                barrier_poly = get_barrier_poly(knl)
+                barrier_ct = barrier_poly.eval_with_dict(params)
+                op_map = get_op_poly(knl)
+                flops, iops = get_32b_ops(op_map, params)
 
-            # execute
-            #print "="*40+"TIMING RESULTS"
-            print("running kernel...")
-            #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
+                op_map2 = get_op_poly2(knl)
+                #amd_op32 = get_32b_amd_ops(op_map2, params)
+                amd_flop32 = get_32b_amd_flops(op_map2, params)
+                other_flop32 = get_32b_flops_all(op_map2, params) - sum(amd_flop32)
+                if flops != sum(amd_flop32) + other_flop32: #TODO remove after debug
+                    print("<debug> PROBLEM!, ops don't add up: ",
+                          flops, sum(amd_flop32), other_flop32)
 
-            trial_times = []
-            for i in range(averaging_trials+warmup_trials):
-                evt, out = knl(queue, a=a_mat_dev, b=b_mat_dev, d=d_mat_dev,
-                               e=e_mat_dev)
-                evt.wait()
-                trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
-            avg_time = np.average(trial_times[warmup_trials:])
-            #print(trial_times)
-            #print(avg_time)
+                sub_map = get_DRAM_access_poly(knl)  # noqa
+                f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
+                                                                      sub_map, params)
+                f32coal = f32coal_l + f32coal_s
+                f32uncoal = f32uncoal_l + f32uncoal_s
+                if f32uncoal != 0:
+                    print(f32uncoal_l, f32uncoal_s)
+                    print(knl)
+                    1/0
+                #print(sub_map)
+                #print(f32coal/(n*n), f32uncoal/(n*n), flops/(n*n))
+                '''
+                print_ptx_src_msg(knl.name)
+                print "="*40+"KERNEL STATS"
+                print "barrier count: ", barrier_ct
+                print "flops: ", flops
+                print(sub_map)
+                print "="*40
+                '''
 
-            gstats = GPUStats('TeslaC2070')
-            reg32_per_thread = 13
+                # execute
+                #print "="*40+"TIMING RESULTS"
+                print("running kernel...")
+                #knl = lp.set_options(knl, write_cl=True, highlight_cl=True)
 
-            shared_mem_per_block = 0
-            total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
-            total_threads = total_blocks*BSIZEx*BSIZEy  # TODO never used
-            kstats = KernelStats(flops/(n*n), f32uncoal/(n*n), f32coal/(n*n),
-                                 barrier_ct, reg32_per_thread, shared_mem_per_block)
-            tconfig = ThreadConfig(BSIZEx*BSIZEy, total_blocks)
-            model = PerfModel(gstats, kstats, tconfig,
-                            np.dtype(dtype))
-            cycles = model.compute_total_cycles()
-            actual.append(avg_time)
-            HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
+                trial_times = []
+                for i in range(averaging_trials+warmup_trials):
+                    '''
+                    evt, out = knl(queue, a=a_mat_dev, b=b_mat_dev, c=c_mat_dev,
+                                   d=d_mat_dev, e=e_mat_dev, f=f_mat_dev,
+                                   g=g_mat_dev, h=h_mat_dev, p=p_mat_dev,
+                                   q=q_mat_dev)
+                    '''
+                    evt, out = knl(queue, **matlist)
+                    evt.wait()
+                    trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
+                avg_time = np.average(trial_times[warmup_trials:])
+                #print(trial_times)
+                #print(avg_time)
 
-            '''
-            print "actual runtime: ", actual[-1]
-            print "total predicted time: ", predicted[-1]
-            print "total predicted execution cycles: ", cycles
-            print "="*40
-            '''
-            add_row_to_LS_mat(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
-                             f32uncoal_s, barrier_ct, total_blocks, n*n,
-                             np.dtype(dtype).itemsize, model)
+                gstats = GPUStats('TeslaC2070')
+                reg32_per_thread = 12
+
+                shared_mem_per_block = 0
+                total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
+                total_threads = total_blocks*BSIZEx*BSIZEy  # TODO never used
+                kstats = KernelStats(flops/(n*n), f32uncoal/(n*n), f32coal/(n*n),
+                                     barrier_ct, reg32_per_thread, shared_mem_per_block)
+                tconfig = ThreadConfig(BSIZEx*BSIZEy, total_blocks)
+                model = PerfModel(gstats, kstats, tconfig,
+                                np.dtype(dtype))
+                cycles = model.compute_total_cycles()
+                actual.append(avg_time)
+                HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
+
+                '''
+                print "actual runtime: ", actual[-1]
+                print "total predicted time: ", predicted[-1]
+                print "total predicted execution cycles: ", cycles
+                print "="*40
+                '''
+                '''
+                add_row_to_LS_mat(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
+                                 f32uncoal_s, barrier_ct, total_blocks, n*n,
+                                 np.dtype(dtype).itemsize, model)
+                '''
+                ops = copy.deepcopy(amd_flop32)
+                ops.append(other_flop32)
+                add_row_to_LS_mat2(A, ops, f32coal_l, f32coal_s, f32uncoal_l,
+                                 f32uncoal_s, barrier_ct, total_blocks, n*n,
+                                 np.dtype(dtype).itemsize, model)
+
 
     update_lstsq_mats(Atrain_all, Atest_all, ytrain_all, ytest_all,
                       actual_times_all, HK_predict_all,
@@ -895,6 +1138,14 @@ def run_empt_trials(ctx, queue, nvals, configs_t,
             barrier_ct = barrier_poly.eval_with_dict(params)
             op_map = get_op_poly(knl)
             flops, iops = get_32b_ops(op_map, params)
+
+            op_map2 = {}
+            amd_flop32 = get_32b_amd_flops(op_map2, params)
+            other_flop32 = get_32b_flops_all(op_map2, params) - sum(amd_flop32)
+            if flops != sum(amd_flop32) + other_flop32: #TODO remove after debug
+                print("<debug> PROBLEM!, ops don't add up: ",
+                      flops, sum(amd_flop32), other_flop32)
+
             sub_map = get_DRAM_access_poly(knl)  # noqa
             f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
                                                                     sub_map, params)
@@ -926,10 +1177,16 @@ def run_empt_trials(ctx, queue, nvals, configs_t,
 
             actual.append(avg_time)
             HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
-
+            '''
             add_row_to_LS_mat(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
+            '''
+            ops = copy.deepcopy(amd_flop32)
+            ops.append(other_flop32)
+            add_row_to_LS_mat2(A, ops, f32coal_l, f32coal_s, f32uncoal_l,
+                               f32uncoal_s, barrier_ct, total_blocks, n*n,
+                               np.dtype(dtype).itemsize, model)
 
     update_lstsq_mats(Atrain_all, Atest_all, ytrain_all, ytest_all,
                       actual_times_all, HK_predict_all,
