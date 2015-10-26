@@ -5,6 +5,8 @@ from perf_model import GPUStats, KernelStats, ThreadConfig, PerfModel
 import math
 import numpy as np
 import matplotlib.pyplot as plt
+import loopy as lp
+from loopy.statistics import estimate_regs_per_thread
 '''
 from pyopencl.tools import (  # noqa
         pytest_generate_tests_for_pyopencl
@@ -280,11 +282,99 @@ def test_HK_SVM():
     #assert 1 == 0
     #assert (abs(model.compute_total_cycles() - expected) / expected) < TOLERANCE
 
+
+def test_reg_counter_basic():
+
+    knl = lp.make_kernel(
+            "[n,m,l] -> {[i,k,j]: 0<=i<n and 0<=k<m and 0<=j<l}",
+            [
+                """
+                c[i, j, k] = a[i,j,k]*b[i,j,k]/3.0+a[i,j,k]
+                e[i, k+1] = g[i,k]*h[i,k+1]
+                """
+            ],
+            name="basic", assumptions="n,m,l >= 1")
+
+    knl = lp.add_and_infer_dtypes(knl,
+                        dict(a=np.float32, b=np.float32, g=np.float64, h=np.float64))
+    regs = estimate_regs_per_thread(knl)
+    assert regs == 6
+
+
+def test_reg_counter_reduction():
+
+    knl = lp.make_kernel(
+            "{[i,k,j]: 0<=i<n and 0<=k<m and 0<=j<l}",
+            [
+                "c[i, j] = sum(k, a[i, k]*b[k, j])"
+            ],
+            name="matmul_serial", assumptions="n,m,l >= 1")
+
+    knl = lp.add_and_infer_dtypes(knl, dict(a=np.float32, b=np.float32))
+    regs = estimate_regs_per_thread(knl)
+    assert regs == 6
+
+
+def test_reg_counter_logic():
+
+    knl = lp.make_kernel(
+            "{[i,k,j]: 0<=i<n and 0<=k<m and 0<=j<l}",
+            [
+                """
+                e[i,k] = if(not(k<l-2) and k>6 or k/2==l, g[i,k]*2, g[i,k]+h[i,k]/2)
+                """
+            ],
+            name="logic", assumptions="n,m,l >= 1")
+
+    knl = lp.add_and_infer_dtypes(knl, dict(g=np.float32, h=np.float64))
+    regs = estimate_regs_per_thread(knl)
+    assert regs == 6
+
+
+def test_reg_counter_specialops():
+
+    knl = lp.make_kernel(
+            "{[i,k,j]: 0<=i<n and 0<=k<m and 0<=j<l}",
+            [
+                """
+                c[i, j, k] = (2*a[i,j,k])%(2+b[i,j,k]/3.0)
+                e[i, k] = (1+g[i,k])**(1+h[i,k+1])
+                """
+            ],
+            name="specialops", assumptions="n,m,l >= 1")
+
+    knl = lp.add_and_infer_dtypes(knl,
+                        dict(a=np.float32, b=np.float32, g=np.float64, h=np.float64))
+    regs = estimate_regs_per_thread(knl)
+    assert regs == 6
+
+
+def test_reg_counter_bitwise():
+
+    knl = lp.make_kernel(
+            "{[i,k,j]: 0<=i<n and 0<=k<m and 0<=j<l}",
+            [
+                """
+                c[i, j, k] = (a[i,j,k] | 1) + (b[i,j,k] & 1)
+                e[i, k] = (g[i,k] ^ k)*(~h[i,k+1]) + (g[i, k] << (h[i,k] >> k))
+                """
+            ],
+            name="bitwise", assumptions="n,m,l >= 1")
+
+    knl = lp.add_and_infer_dtypes(
+            knl, dict(
+                a=np.int32, b=np.int32,
+                g=np.int64, h=np.int64))
+    regs = estimate_regs_per_thread(knl)
+    assert regs == 6
+
+
 test_HK_example()
 test_HK_sepia()
 test_HK_blackscholes()
 test_HK_linear()
 test_HK_SVM()
+test_reg_counter_basic()
 '''
 if __name__ == "__main__":
     if len(sys.argv) > 1:
