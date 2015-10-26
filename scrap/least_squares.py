@@ -6,6 +6,7 @@ import pyopencl as cl
 import pyopencl.array
 import pyopencl.clrandom  # noqa
 from loopy.statistics import get_op_poly, get_DRAM_access_poly, get_barrier_poly
+from loopy.statistics import estimate_regs_per_thread, get_op_poly2
 import sys
 sys.path.append("../performance_model")
 sys.path.append("../utils")
@@ -30,7 +31,7 @@ run_fd = True
 
 warm_up_gpu = False
 compute_const_manually = False
-averaging_trials = 5
+averaging_trials = 4
 warmup_trials = 2
 
 
@@ -163,6 +164,28 @@ def update_LS_matrix(A, flops, intops,
         A[-1].append(1.0)
 
 
+def update_LS_matrix2(A, op_array,
+                     f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s,
+                     barrier_ct, blocks, thread_work_units, itemsize, model):
+
+    reps_per_SM = math.ceil(blocks/(model.active_blocks_per_SM *
+                                    model.GPU_stats.SM_count))
+    multiplier = reps_per_SM
+    new_LS_entry = [multiplier*itemsize*ops/thread_work_units
+                         for ops in op_array]
+    new_LS_entry.append(multiplier*itemsize*f32uncoal_l/thread_work_units)
+    new_LS_entry.append(multiplier*itemsize*f32coal_l/thread_work_units)
+    new_LS_entry.append(multiplier*itemsize*f32uncoal_s/thread_work_units)
+    new_LS_entry.append(multiplier*itemsize*f32coal_s/thread_work_units)
+    new_LS_entry.append(multiplier*itemsize*min(f32uncoal_s, f32uncoal_l)/thread_work_units)
+    new_LS_entry.append(multiplier*itemsize*min(f32coal_s, f32coal_l)/thread_work_units)
+    new_LS_entry.append(multiplier*barrier_ct)
+    # TODO assumes there are enough blocks to fully load all SMs
+    A.append(new_LS_entry)
+    if not compute_const_manually:
+        A[-1].append(1.0)
+
+
 def split_for_train_test(A, y):
     Atrain = []
     Atest = []
@@ -258,13 +281,20 @@ def run_mm_trials(ctx, queue, nvals, configs_t,
 
             #ptx_dump(ctx, knl, n, BSIZEx, BSIZEy)
 
+            params = {'n': n}
             barrier_poly = get_barrier_poly(knl)
-            barrier_ct = barrier_poly.eval_with_dict({'n': n})
+            barrier_ct = barrier_poly.eval_with_dict(params)
             op_map = get_op_poly(knl)
-            flops, iops = get_32b_ops(op_map, {'n': n})
+            op_map2 = get_op_poly2(knl)
+            flops, iops = get_32b_ops(op_map, params)
+            amd_op32 = get_32b_amd_ops(op_map2, params)
+            other_op32 = get_32b_ops_all(op_map2, params) - sum(amd_op32)
+            if flops + iops != sum(amd_op32) + other_op32: #TODO remove after debug
+                print("<debug> PROBLEM!, ops don't add up: ",
+                        flops, iops, sum(amd_op32), other_op32)
             sub_map = get_DRAM_access_poly(knl)  # noqa
             f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
-                                                                  sub_map, {'n': n})
+                                                                  sub_map, params)
             f32coal = f32coal_l + f32coal_s
             f32uncoal = f32uncoal_l + f32uncoal_s
 
@@ -289,13 +319,25 @@ def run_mm_trials(ctx, queue, nvals, configs_t,
                 trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
             avg_time = np.average(trial_times[warmup_trials:])
 
-            gstats = GPUStats('TeslaK20')
+            gstats = GPUStats('TeslaC2070')
+            ''' for k20:
             if BSIZEx == 8 or BSIZEx == 32:  # TODO fix hack
                 reg32_per_thread = 25
             elif BSIZEx == 24:
                 reg32_per_thread = 18
             elif BSIZEx == 16:
                 reg32_per_thread = 22
+            '''
+            # for C2070
+            if BSIZEx == 8 or BSIZEx == 16:  # TODO fix hack
+                reg32_per_thread = 20
+            elif BSIZEx == 32:
+                reg32_per_thread = 19
+            elif BSIZEx == 24:
+                reg32_per_thread = 12
+            #reg32_per_thread = 1 #estimate_regs_per_thread(knl)
+            #print(reg32_per_thread, estimate_regs_per_thread(knl))
+            reg32_per_thread = estimate_regs_per_thread(knl)
 
             shared_mem_per_block = 4*ksplit*(BSIZEx+BSIZEy)
             total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
@@ -307,6 +349,8 @@ def run_mm_trials(ctx, queue, nvals, configs_t,
                             np.dtype(dtype))
             cycles = model.compute_total_cycles()
             actual.append(avg_time)
+            #for time in trial_times: #!!!!!
+            #    actual.append(time)
             HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
 
             '''
@@ -315,9 +359,24 @@ def run_mm_trials(ctx, queue, nvals, configs_t,
             print "total predicted execution cycles: ", cycles
             print "="*40
             '''
+            #''' #!!!!!
+            '''
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
+            '''
+            ops = copy.deepcopy(amd_op32)
+            ops.append(other_op32)
+            update_LS_matrix2(A, ops, f32coal_l, f32coal_s, f32uncoal_l,
+                             f32uncoal_s, barrier_ct, total_blocks, n*n,
+                             np.dtype(dtype).itemsize, model)
+
+            '''
+            for time in trial_times:
+                update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
+                                 f32uncoal_s, barrier_ct, total_blocks, n*n,
+                                 np.dtype(dtype).itemsize, model)
+            '''
 
     update_lstsq_mats(Atrain_all, Atest_all, ytrain_all, ytest_all,
                       actual_times_all, HK_predict_all,
@@ -362,13 +421,20 @@ def run_axpy_trials(ctx, queue, nvals, configs_t,
             # use ptx src to determine resource usage
             #ptx_dump(ctx, knl, n, BSIZEx, BSIZEy)
 
+            params = {'n': n}
             barrier_poly = get_barrier_poly(knl)
-            barrier_ct = barrier_poly.eval_with_dict({'n': n})
+            barrier_ct = barrier_poly.eval_with_dict(params)
             op_map = get_op_poly(knl)
-            flops, iops = get_32b_ops(op_map, {'n': n})
+            op_map2 = get_op_poly2(knl)
+            flops, iops = get_32b_ops(op_map, params)
+            amd_op32 = get_32b_amd_ops(op_map2, params)
+            other_op32 = get_32b_ops_all(op_map2, params) - sum(amd_op32)
+            if flops + iops != sum(amd_op32) + other_op32: #TODO remove after debug
+                print("<debug> PROBLEM!, ops don't add up: ",
+                        flops, iops, sum(amd_op32), other_op32)
             sub_map = get_DRAM_access_poly(knl)  # noqa
             f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
-                                                                  sub_map, {'n': n})
+                                                                  sub_map, params)
             f32coal = f32coal_l + f32coal_s
             f32uncoal = f32uncoal_l + f32uncoal_s
 
@@ -393,8 +459,11 @@ def run_axpy_trials(ctx, queue, nvals, configs_t,
                 trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
             avg_time = np.average(trial_times[warmup_trials:])
 
-            gstats = GPUStats('TeslaK20')
-            reg32_per_thread = 20
+            gstats = GPUStats('TeslaC2070')
+            reg32_per_thread = 18 #18 for c2070, 20 for k20
+            #reg32_per_thread = 1 #estimate_regs_per_thread(knl)
+            #print(reg32_per_thread, estimate_regs_per_thread(knl))
+            reg32_per_thread = estimate_regs_per_thread(knl)
             shared_mem_per_block = 0
             total_blocks = math.ceil(n/(BSIZEx*unroll))
             kstats = KernelStats(flops*unroll/n, f32uncoal*unroll/n,
@@ -405,9 +474,19 @@ def run_axpy_trials(ctx, queue, nvals, configs_t,
             cycles = model.compute_total_cycles()
 
             actual.append(avg_time)
+            #for time in trial_times: #!!!!!
+            #    actual.append(time)
             HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
 
+            #for time in trial_times:
+            '''
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
+                             f32uncoal_s, barrier_ct, total_blocks, n/unroll,
+                             np.dtype(dtype).itemsize, model)
+            '''
+            ops = copy.deepcopy(amd_op32)
+            ops.append(other_op32)
+            update_LS_matrix2(A, ops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n/unroll,
                              np.dtype(dtype).itemsize, model)
 
@@ -451,13 +530,20 @@ def run_tp_trials(ctx, queue, nvals, configs_t,
             # use ptx src to determine resource usage
             #ptx_dump(ctx, knl, n, BSIZEx, BSIZEy)
 
+            params = {'n': n}
             barrier_poly = get_barrier_poly(knl)
-            barrier_ct = barrier_poly.eval_with_dict({'n': n})
+            barrier_ct = barrier_poly.eval_with_dict(params)
             op_map = get_op_poly(knl)
-            flops, iops = get_32b_ops(op_map, {'n': n})
+            op_map2 = get_op_poly2(knl)
+            flops, iops = get_32b_ops(op_map, params)
+            amd_op32 = get_32b_amd_ops(op_map2, params)
+            other_op32 = get_32b_ops_all(op_map2, params) - sum(amd_op32)
+            if flops + iops != sum(amd_op32) + other_op32: #TODO remove after debug
+                print("<debug> PROBLEM!, ops don't add up: ",
+                        flops, iops, sum(amd_op32), other_op32)
             sub_map = get_DRAM_access_poly(knl)  # noqa
             f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
-                                                                  sub_map, {'n': n})
+                                                                  sub_map, params)
             f32coal = f32coal_l + f32coal_s
             f32uncoal = f32uncoal_l + f32uncoal_s
             # execute
@@ -475,7 +561,8 @@ def run_tp_trials(ctx, queue, nvals, configs_t,
             avg_time = np.average(trial_times[warmup_trials:])
             #if not prefetch:
             #    1/0
-            gstats = GPUStats('TeslaK20')
+            gstats = GPUStats('TeslaC2070')
+            ''' for k20
             if n % BSIZEx == 0 and n % BSIZEy == 0:
                 if prefetch:
                     reg32_per_thread = 10
@@ -486,7 +573,11 @@ def run_tp_trials(ctx, queue, nvals, configs_t,
                     reg32_per_thread = 8
                 else:
                     reg32_per_thread = 9
-
+            '''
+            reg32_per_thread = 8 # for c2070
+            #print(reg32_per_thread, estimate_regs_per_thread(knl))
+            reg32_per_thread = estimate_regs_per_thread(knl)
+            #reg32_per_thread = 1 #estimate_regs_per_thread(knl)
             if prefetch:
                 shared_mem_per_block = 4*BSIZEx*BSIZEy
             else:
@@ -502,10 +593,20 @@ def run_tp_trials(ctx, queue, nvals, configs_t,
             cycles = model.compute_total_cycles()
 
             actual.append(avg_time)
+            #for time in trial_times: #!!!!!
+            #    actual.append(time)
             HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
 
             #update_LS_matrix(A, flops, f32coal_l, f32coal_s, f32uncoal_l,
+            #for time in trial_times:
+            '''
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
+                             f32uncoal_s, barrier_ct, total_blocks, n*n,
+                             np.dtype(dtype).itemsize, model)
+            '''
+            ops = copy.deepcopy(amd_op32)
+            ops.append(other_op32)
+            update_LS_matrix2(A, ops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
 
@@ -579,7 +680,13 @@ def run_conv_trials(ctx, queue, nvals, configs_t,
             barrier_poly = get_barrier_poly(knl)
             barrier_ct = barrier_poly.eval_with_dict(params)
             op_map = get_op_poly(knl)
+            op_map2 = get_op_poly2(knl)
             flops, iops = get_32b_ops(op_map, params)
+            amd_op32 = get_32b_amd_ops(op_map2, params)
+            other_op32 = get_32b_ops_all(op_map2, params) - sum(amd_op32)
+            if flops + iops != sum(amd_op32) + other_op32: #TODO remove after debug
+                print("<debug> PROBLEM!, ops don't add up: ",
+                        flops, iops, sum(amd_op32), other_op32)
             #TODO why do blk sizes that don't fit perfecty increase total flops/iops
             sub_map = get_DRAM_access_poly(knl)  # noqa
             f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
@@ -599,8 +706,11 @@ def run_conv_trials(ctx, queue, nvals, configs_t,
                 trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
             avg_time = np.average(trial_times[warmup_trials:])
 
-            gstats = GPUStats('TeslaK20')
-            reg32_per_thread = 33
+            gstats = GPUStats('TeslaC2070')
+            reg32_per_thread = 20 #20 for c2070, 33 for k20
+            #print(reg32_per_thread, estimate_regs_per_thread(knl))
+            reg32_per_thread = estimate_regs_per_thread(knl)
+            #reg32_per_thread = 1 #estimate_regs_per_thread(knl)
             shared_mem_per_block = (ncolors * (f_w*2+1) * (f_w*2+1) +
                                     (BSIZEx+f_w*2) * (BSIZEy+f_w*2)
                                     ) * np.dtype(dtype).itemsize
@@ -613,8 +723,18 @@ def run_conv_trials(ctx, queue, nvals, configs_t,
             cycles = model.compute_total_cycles()
 
             actual.append(avg_time)
+            #for time in trial_times: #!!!!!
+            #    actual.append(time)
             HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
+            #for time in trial_times:
+            '''
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
+                             f32uncoal_s, barrier_ct, total_blocks, n*n,
+                             np.dtype(dtype).itemsize, model)
+            '''
+            ops = copy.deepcopy(amd_op32)
+            ops.append(other_op32)
+            update_LS_matrix2(A, ops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
             #TODO try total_threads for n*n
@@ -650,12 +770,19 @@ def run_empt_trials(ctx, queue, nvals, configs_t,
             params = {'n': n}
             barrier_poly = get_barrier_poly(knl)
             barrier_ct = barrier_poly.eval_with_dict(params)
-            op_map = get_op_poly(knl)
+            #op_map = get_op_poly(knl) #TODO figure out error
+            op_map = {}
+            op_map2 = {}
             flops, iops = get_32b_ops(op_map, params)
-            sub_map = get_DRAM_access_poly(knl)  # noqa
+            amd_op32 = get_32b_amd_ops(op_map2, params)
+            other_op32 = get_32b_ops_all(op_map2, params) - sum(amd_op32)
+            if flops + iops != sum(amd_op32) + other_op32: #TODO remove after debug
+                print("<debug> PROBLEM!, ops don't add up: ",
+                        flops, iops, sum(amd_op32), other_op32)
+            #sub_map = get_DRAM_access_poly(knl)  #TODO figure out error
+            sub_map = {}
             f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
                                                                     sub_map, params)
-
             # execute
             #print "="*40+"TIMING RESULTS"
             print("running kernel...")
@@ -668,8 +795,11 @@ def run_empt_trials(ctx, queue, nvals, configs_t,
                 trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
             avg_time = np.average(trial_times[warmup_trials:])
 
-            gstats = GPUStats('TeslaK20')
+            gstats = GPUStats('TeslaC2070')
             reg32_per_thread = 2
+            #print(reg32_per_thread, estimate_regs_per_thread(knl))
+            reg32_per_thread = estimate_regs_per_thread(knl)
+            #reg32_per_thread = 1 #estimate_regs_per_thread(knl)
             shared_mem_per_block = 0
             total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
             total_threads = total_blocks*BSIZEx*BSIZEy  # TODO unused
@@ -682,9 +812,19 @@ def run_empt_trials(ctx, queue, nvals, configs_t,
             cycles = model.compute_total_cycles()
 
             actual.append(avg_time)
+            #for time in trial_times: #!!!!!
+            #    actual.append(time)
             HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
 
+            #for time in trial_times:
+            '''
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
+                             f32uncoal_s, barrier_ct, total_blocks, n*n,
+                             np.dtype(dtype).itemsize, model)
+            '''
+            ops = copy.deepcopy(amd_op32)
+            ops.append(other_op32)
+            update_LS_matrix2(A, ops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
 
@@ -733,7 +873,13 @@ def run_fd_trials(ctx, queue, nvals, configs_t,
             barrier_poly = get_barrier_poly(knl)
             barrier_ct = barrier_poly.eval_with_dict(params)
             op_map = get_op_poly(knl)
+            op_map2 = get_op_poly2(knl)
             flops, iops = get_32b_ops(op_map, params)
+            amd_op32 = get_32b_amd_ops(op_map2, params)
+            other_op32 = get_32b_ops_all(op_map2, params) - sum(amd_op32)
+            if flops + iops != sum(amd_op32) + other_op32: #TODO remove after debug
+                print("<debug> PROBLEM!, ops don't add up: ",
+                        flops, iops, sum(amd_op32), other_op32)
             sub_map = get_DRAM_access_poly(knl)  # noqa
             f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
                                                                     sub_map, params)
@@ -752,11 +898,16 @@ def run_fd_trials(ctx, queue, nvals, configs_t,
                 trial_times.append((evt.profile.END - evt.profile.START)*1e-9)
             avg_time = np.average(trial_times[warmup_trials:])
 
-            gstats = GPUStats('TeslaK20')
+            gstats = GPUStats('TeslaC2070')
+            #'''
             if n % BSIZEx == 0 and n % BSIZEy == 0:
                 reg32_per_thread = 14
             else:
-                reg32_per_thread = 16
+                reg32_per_thread = 15 # 16 for k20
+            #'''
+            #reg32_per_thread = 1 #estimate_regs_per_thread(knl)
+            #print(reg32_per_thread, estimate_regs_per_thread(knl))
+            reg32_per_thread = estimate_regs_per_thread(knl)
 
             shared_mem_per_block = 4*(BSIZEx+2)*(BSIZEy+2)
             total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
@@ -769,9 +920,19 @@ def run_fd_trials(ctx, queue, nvals, configs_t,
             cycles = model.compute_total_cycles()
 
             actual.append(avg_time)
+            #for time in trial_times: #!!!!!
+            #    actual.append(time)
             HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
 
+            #for time in trial_times:
+            '''
             update_LS_matrix(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
+                             f32uncoal_s, barrier_ct, total_blocks, n*n,
+                             np.dtype(dtype).itemsize, model)
+            '''
+            ops = copy.deepcopy(amd_op32)
+            ops.append(other_op32)
+            update_LS_matrix2(A, ops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
 
