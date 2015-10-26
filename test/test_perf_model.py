@@ -172,7 +172,8 @@ def test_HK_linear():
     MWPs = []
     print "blk sz\tactive\tocc\t\tcwp\t\tmwp\t\tcpi\t\ttime"
     for i in range(trials):
-        tconfig = ThreadConfig(threads[i], (math.ceil(n/(threads[i]**0.5))**2)/2.0)
+        #tconfig = ThreadConfig(threads[i], (math.ceil(n/(threads[i]**0.5))**2)/2.0)
+        tconfig = ThreadConfig(threads[i], (math.ceil(n/(threads[i]**0.5))**2))
         # TODO why do I have to divide by 2.0 to match HK results?
         #print " ", n*n/threads[i], math.ceil(n/(threads[i]**0.5))**2, n
         model = PerfModel(gstats, kstats, tconfig, np.dtype(np.float32))
@@ -202,14 +203,15 @@ def test_HK_linear():
     print "MWP:\t%f\t%f\t%f" % (np.average(MWPs), expect_avg_mwp, 
                     (np.average(MWPs)-expect_avg_mwp)/expect_avg_mwp)
     print ""
-    '''
+    #'''
     plt.figure("linear")
     plt.title("linear")
     plt.plot(threads, times, 'b*')
     axes = plt.gca()
-    axes.set_ylim([0, 1395])
+    axes.set_ylim([0, 2*1395])
+    #axes.set_ylim([0, 1395])
     #plt.show()
-    '''
+    #'''
     #assert 1 == 0
     #assert (abs(model.compute_total_cycles() - expected) / expected) < TOLERANCE
 
@@ -237,7 +239,8 @@ def test_HK_SVM():
     print "blk sz\tactive\tocc\t\tcwp\t\tmwp\t\tcpi\t\ttime"
     for i in range(trials):
         tconfig = ThreadConfig(threads[i],
-                    math.ceil(n1/(threads[i]**0.5))*math.ceil(n2/(threads[i]**0.5))/4.0)
+                    math.ceil(n1/(threads[i]**0.5))*math.ceil(n2/(threads[i]**0.5)))
+                    #math.ceil(n1/(threads[i]**0.5))*math.ceil(n2/(threads[i]**0.5))/4.0)
                     # TODO why do I have to divide by 4.0 to match HK results?
         model = PerfModel(gstats, kstats, tconfig, np.dtype(np.float32))
         times.append(model.compute_total_cycles() /
@@ -266,14 +269,14 @@ def test_HK_SVM():
     print "MWP:\t%f\t%f\t%f" % (np.average(MWPs), expect_avg_mwp, 
                     (np.average(MWPs)-expect_avg_mwp)/expect_avg_mwp)
     print ""
-    '''
+    #'''
     plt.figure("svm")
     plt.title("svm")
     plt.plot(threads, times, 'b*')
     axes = plt.gca()
     axes.set_ylim([0, 60])
     plt.show()
-    '''
+    #'''
     #assert 1 == 0
     #assert (abs(model.compute_total_cycles() - expected) / expected) < TOLERANCE
 
