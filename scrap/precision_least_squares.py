@@ -6,7 +6,7 @@ import pyopencl as cl
 import pyopencl.array
 import pyopencl.clrandom  # noqa
 from loopy.statistics import get_op_poly, get_DRAM_access_poly, get_barrier_poly
-from loopy.statistics import get_op_poly2
+#from loopy.statistics import get_op_poly2
 import sys
 sys.path.append("../performance_model")
 sys.path.append("../utils")
@@ -30,7 +30,7 @@ run_subs = True
 #run_tp = True
 #run_conv = True
 run_empt = True
-#run_fd = True
+run_fd = True
 
 warm_up_gpu = False
 compute_const_manually = False
@@ -57,18 +57,18 @@ def main():
         nvals = [2**(10+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
         run_flops_trials(ctx, queue, nvals, configs_t, Atrain, Atest, ytrain, ytest,
-                      actual_times_all, HK_predict_all, 'split')
+                      actual_times_all, HK_predict_all, 'train')
     if run_subs:
         nvals = [2**(10+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
         run_subs_trials(ctx, queue, nvals, configs_t, Atrain, Atest, ytrain, ytest,
-                      actual_times_all, HK_predict_all, 'split')
+                      actual_times_all, HK_predict_all, 'train')
     if run_axpy:
         nvals = [2**(25+x) for x in range(trials_n)]
         configs_t = [(64, 1), (128, 1), (256, 1), (512, 1), (1024, 1)]
         # TODO figure out problem with 64, 1 (why not slower?)
         run_axpy_trials(ctx, queue, nvals, configs_t, Atrain, Atest, ytrain, ytest,
-                        actual_times_all, HK_predict_all, 'split')
+                        actual_times_all, HK_predict_all, 'test')
     if run_tp:
         nvals = [2**(10+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
@@ -90,7 +90,7 @@ def main():
         nvals = [2**(10+x) for x in range(trials_n)]
         configs_t = [(8, 8), (16, 16), (24, 24), (32, 32)]
         run_fd_trials(ctx, queue, nvals, configs_t, Atrain, Atest, ytrain, ytest,
-                        actual_times_all, HK_predict_all, 'split')
+                        actual_times_all, HK_predict_all, 'test')
 
     # least squares calculations
     if run_flops or run_axpy or run_tp or run_conv or run_empt or run_fd:
@@ -453,16 +453,18 @@ def run_flops_trials(ctx, queue, nvals, configs_t,
                 #ptx_dump(ctx, knl, n, BSIZEx, BSIZEy)
                 barrier_poly = get_barrier_poly(knl)
                 barrier_ct = barrier_poly.eval_with_dict(params)
-                op_map = get_op_poly(knl)
-                flops, iops = get_32b_ops(op_map, params)
+                #op_map = get_op_poly(knl)
+                #flops, iops = get_32b_ops(op_map, params)
 
-                op_map2 = get_op_poly2(knl)
+                #op_map2 = get_op_poly2(knl)
+                op_map2 = get_op_poly(knl)
                 #amd_op32 = get_32b_amd_ops(op_map2, params)
                 amd_flop32 = get_32b_amd_flops(op_map2, params)
                 other_flop32 = get_32b_flops_all(op_map2, params) - sum(amd_flop32)
-                if flops != sum(amd_flop32) + other_flop32: #TODO remove after debug
-                    print("<debug> PROBLEM!, ops don't add up: ",
-                          flops, sum(amd_flop32), other_flop32)
+                flops = sum(amd_flop32) + other_flop32
+                #if flops != sum(amd_flop32) + other_flop32: #TODO remove after debug
+                #    print("<debug> PROBLEM!, ops don't add up: ",
+                #          flops, sum(amd_flop32), other_flop32)
 
                 sub_map = get_DRAM_access_poly(knl)  # noqa
                 f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
@@ -721,16 +723,18 @@ def run_subs_trials(ctx, queue, nvals, configs_t,
                 #ptx_dump(ctx, knl, n, BSIZEx, BSIZEy)
                 barrier_poly = get_barrier_poly(knl)
                 barrier_ct = barrier_poly.eval_with_dict(params)
-                op_map = get_op_poly(knl)
-                flops, iops = get_32b_ops(op_map, params)
+                #op_map = get_op_poly(knl)
+                #flops, iops = get_32b_ops(op_map, params)
 
-                op_map2 = get_op_poly2(knl)
+                #op_map2 = get_op_poly2(knl)
+                op_map2 = get_op_poly(knl)
                 #amd_op32 = get_32b_amd_ops(op_map2, params)
                 amd_flop32 = get_32b_amd_flops(op_map2, params)
                 other_flop32 = get_32b_flops_all(op_map2, params) - sum(amd_flop32)
-                if flops != sum(amd_flop32) + other_flop32: #TODO remove after debug
-                    print("<debug> PROBLEM!, ops don't add up: ",
-                          flops, sum(amd_flop32), other_flop32)
+                flops = sum(amd_flop32) + other_flop32
+                #if flops != sum(amd_flop32) + other_flop32: #TODO remove after debug
+                #    print("<debug> PROBLEM!, ops don't add up: ",
+                #          flops, sum(amd_flop32), other_flop32)
 
                 sub_map = get_DRAM_access_poly(knl)  # noqa
                 f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
@@ -848,10 +852,20 @@ def run_axpy_trials(ctx, queue, nvals, configs_t,
             # use ptx src to determine resource usage
             #ptx_dump(ctx, knl, n, BSIZEx, BSIZEy)
 
+            params = dict(n=n)
             barrier_poly = get_barrier_poly(knl)
-            barrier_ct = barrier_poly.eval_with_dict({'n': n})
+            barrier_ct = barrier_poly.eval_with_dict(params)
             op_map = get_op_poly(knl)
-            flops, iops = get_32b_ops(op_map, {'n': n})
+            flops, iops = get_32b_ops(op_map, params)
+
+            op_map2 = get_op_poly2(knl)
+            #amd_op32 = get_32b_amd_ops(op_map2, params)
+            amd_flop32 = get_32b_amd_flops(op_map2, params)
+            other_flop32 = get_32b_flops_all(op_map2, params) - sum(amd_flop32)
+            if flops != sum(amd_flop32) + other_flop32: #TODO remove after debug
+                print("<debug> PROBLEM!, ops don't add up: ",
+                      flops, sum(amd_flop32), other_flop32)
+
             sub_map = get_DRAM_access_poly(knl)  # noqa
             f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
                                                                   sub_map, {'n': n})
@@ -892,10 +906,17 @@ def run_axpy_trials(ctx, queue, nvals, configs_t,
 
             actual.append(avg_time)
             HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
-
+            '''
             add_row_to_LS_mat(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n/unroll,
                              np.dtype(dtype).itemsize, model)
+            '''
+            ops = copy.deepcopy(amd_flop32)
+            ops.append(other_flop32)
+            add_row_to_LS_mat2(A, ops, f32coal_l, f32coal_s, f32uncoal_l,
+                             f32uncoal_s, barrier_ct, total_blocks, n/unroll,
+                             np.dtype(dtype).itemsize, model)
+
 
     update_lstsq_mats(Atrain_all, Atest_all, ytrain_all, ytest_all,
                       actual_times_all, HK_predict_all,
@@ -1136,15 +1157,16 @@ def run_empt_trials(ctx, queue, nvals, configs_t,
             params = {'n': n}
             barrier_poly = get_barrier_poly(knl)
             barrier_ct = barrier_poly.eval_with_dict(params)
-            op_map = get_op_poly(knl)
-            flops, iops = get_32b_ops(op_map, params)
+            #op_map = get_op_poly(knl)
+            #flops, iops = get_32b_ops(op_map, params)
 
             op_map2 = {}
             amd_flop32 = get_32b_amd_flops(op_map2, params)
             other_flop32 = get_32b_flops_all(op_map2, params) - sum(amd_flop32)
-            if flops != sum(amd_flop32) + other_flop32: #TODO remove after debug
-                print("<debug> PROBLEM!, ops don't add up: ",
-                      flops, sum(amd_flop32), other_flop32)
+            flops = sum(amd_flop32) + other_flop32
+            #if flops != sum(amd_flop32) + other_flop32: #TODO remove after debug
+            #    print("<debug> PROBLEM!, ops don't add up: ",
+            #          flops, sum(amd_flop32), other_flop32)
 
             sub_map = get_DRAM_access_poly(knl)  # noqa
             f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
@@ -1232,8 +1254,19 @@ def run_fd_trials(ctx, queue, nvals, configs_t,
             params = {'n': n}
             barrier_poly = get_barrier_poly(knl)
             barrier_ct = barrier_poly.eval_with_dict(params)
-            op_map = get_op_poly(knl)
-            flops, iops = get_32b_ops(op_map, params)
+            #op_map = get_op_poly(knl)
+            #flops, iops = get_32b_ops(op_map, params)
+
+            #op_map2 = get_op_poly2(knl)
+            op_map2 = get_op_poly(knl)
+            #amd_op32 = get_32b_amd_ops(op_map2, params)
+            amd_flop32 = get_32b_amd_flops(op_map2, params)
+            other_flop32 = get_32b_flops_all(op_map2, params) - sum(amd_flop32)
+            flops = sum(amd_flop32) + other_flop32
+            #if flops != sum(amd_flop32) + other_flop32: #TODO remove after debug
+            #    print("<debug> PROBLEM!, ops don't add up: ",
+            #          flops, sum(amd_flop32), other_flop32)
+
             sub_map = get_DRAM_access_poly(knl)  # noqa
             f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
                                                                     sub_map, params)
@@ -1271,9 +1304,18 @@ def run_fd_trials(ctx, queue, nvals, configs_t,
             actual.append(avg_time)
             HK_predict.append(cycles/(gstats.sm_clock_freq*10**9))
 
+
+            ops = copy.deepcopy(amd_flop32)
+            ops.append(other_flop32)
+            add_row_to_LS_mat2(A, ops, f32coal_l, f32coal_s, f32uncoal_l,
+                             f32uncoal_s, barrier_ct, total_blocks, n*n,
+                             np.dtype(dtype).itemsize, model)
+
+            '''
             add_row_to_LS_mat(A, flops, iops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
+            '''
 
     update_lstsq_mats(Atrain_all, Atest_all, ytrain_all, ytest_all,
                       actual_times_all, HK_predict_all,

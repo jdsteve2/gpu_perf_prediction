@@ -6,7 +6,7 @@ import pyopencl as cl
 import pyopencl.array
 import pyopencl.clrandom  # noqa
 from loopy.statistics import get_op_poly, get_DRAM_access_poly, get_barrier_poly
-from loopy.statistics import get_regs_per_thread, get_op_poly2
+from loopy.statistics import estimate_regs_per_thread, get_op_poly2
 import sys
 sys.path.append("../performance_model")
 sys.path.append("../utils")
@@ -287,11 +287,11 @@ def run_mm_trials(ctx, queue, nvals, configs_t,
             op_map = get_op_poly(knl)
             op_map2 = get_op_poly2(knl)
             flops, iops = get_32b_ops(op_map, params)
-            asmd_op32 = get_32b_asmd_ops(op_map2, params)
-            other_op32 = get_32b_ops_all(op_map2, params) - sum(asmd_op32)
-            if flops + iops != sum(asmd_op32) + other_op32: #TODO remove after debug
+            amd_op32 = get_32b_amd_ops(op_map2, params)
+            other_op32 = get_32b_ops_all(op_map2, params) - sum(amd_op32)
+            if flops + iops != sum(amd_op32) + other_op32: #TODO remove after debug
                 print("<debug> PROBLEM!, ops don't add up: ",
-                        flops, iops, sum(asmd_op32), other_op32)
+                        flops, iops, sum(amd_op32), other_op32)
             sub_map = get_DRAM_access_poly(knl)  # noqa
             f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
                                                                   sub_map, params)
@@ -335,9 +335,9 @@ def run_mm_trials(ctx, queue, nvals, configs_t,
                 reg32_per_thread = 19
             elif BSIZEx == 24:
                 reg32_per_thread = 12
-            #reg32_per_thread = 1 #get_regs_per_thread(knl)
-            #print(reg32_per_thread, get_regs_per_thread(knl))
-            reg32_per_thread = get_regs_per_thread(knl)
+            #reg32_per_thread = 1 #estimate_regs_per_thread(knl)
+            #print(reg32_per_thread, estimate_regs_per_thread(knl))
+            reg32_per_thread = estimate_regs_per_thread(knl)
 
             shared_mem_per_block = 4*ksplit*(BSIZEx+BSIZEy)
             total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
@@ -365,7 +365,7 @@ def run_mm_trials(ctx, queue, nvals, configs_t,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
             '''
-            ops = copy.deepcopy(asmd_op32)
+            ops = copy.deepcopy(amd_op32)
             ops.append(other_op32)
             update_LS_matrix2(A, ops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
@@ -427,11 +427,11 @@ def run_axpy_trials(ctx, queue, nvals, configs_t,
             op_map = get_op_poly(knl)
             op_map2 = get_op_poly2(knl)
             flops, iops = get_32b_ops(op_map, params)
-            asmd_op32 = get_32b_asmd_ops(op_map2, params)
-            other_op32 = get_32b_ops_all(op_map2, params) - sum(asmd_op32)
-            if flops + iops != sum(asmd_op32) + other_op32: #TODO remove after debug
+            amd_op32 = get_32b_amd_ops(op_map2, params)
+            other_op32 = get_32b_ops_all(op_map2, params) - sum(amd_op32)
+            if flops + iops != sum(amd_op32) + other_op32: #TODO remove after debug
                 print("<debug> PROBLEM!, ops don't add up: ",
-                        flops, iops, sum(asmd_op32), other_op32)
+                        flops, iops, sum(amd_op32), other_op32)
             sub_map = get_DRAM_access_poly(knl)  # noqa
             f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
                                                                   sub_map, params)
@@ -461,9 +461,9 @@ def run_axpy_trials(ctx, queue, nvals, configs_t,
 
             gstats = GPUStats('TeslaC2070')
             reg32_per_thread = 18 #18 for c2070, 20 for k20
-            #reg32_per_thread = 1 #get_regs_per_thread(knl)
-            #print(reg32_per_thread, get_regs_per_thread(knl))
-            reg32_per_thread = get_regs_per_thread(knl)
+            #reg32_per_thread = 1 #estimate_regs_per_thread(knl)
+            #print(reg32_per_thread, estimate_regs_per_thread(knl))
+            reg32_per_thread = estimate_regs_per_thread(knl)
             shared_mem_per_block = 0
             total_blocks = math.ceil(n/(BSIZEx*unroll))
             kstats = KernelStats(flops*unroll/n, f32uncoal*unroll/n,
@@ -484,7 +484,7 @@ def run_axpy_trials(ctx, queue, nvals, configs_t,
                              f32uncoal_s, barrier_ct, total_blocks, n/unroll,
                              np.dtype(dtype).itemsize, model)
             '''
-            ops = copy.deepcopy(asmd_op32)
+            ops = copy.deepcopy(amd_op32)
             ops.append(other_op32)
             update_LS_matrix2(A, ops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n/unroll,
@@ -536,11 +536,11 @@ def run_tp_trials(ctx, queue, nvals, configs_t,
             op_map = get_op_poly(knl)
             op_map2 = get_op_poly2(knl)
             flops, iops = get_32b_ops(op_map, params)
-            asmd_op32 = get_32b_asmd_ops(op_map2, params)
-            other_op32 = get_32b_ops_all(op_map2, params) - sum(asmd_op32)
-            if flops + iops != sum(asmd_op32) + other_op32: #TODO remove after debug
+            amd_op32 = get_32b_amd_ops(op_map2, params)
+            other_op32 = get_32b_ops_all(op_map2, params) - sum(amd_op32)
+            if flops + iops != sum(amd_op32) + other_op32: #TODO remove after debug
                 print("<debug> PROBLEM!, ops don't add up: ",
-                        flops, iops, sum(asmd_op32), other_op32)
+                        flops, iops, sum(amd_op32), other_op32)
             sub_map = get_DRAM_access_poly(knl)  # noqa
             f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
                                                                   sub_map, params)
@@ -575,9 +575,9 @@ def run_tp_trials(ctx, queue, nvals, configs_t,
                     reg32_per_thread = 9
             '''
             reg32_per_thread = 8 # for c2070
-            #print(reg32_per_thread, get_regs_per_thread(knl))
-            reg32_per_thread = get_regs_per_thread(knl)
-            #reg32_per_thread = 1 #get_regs_per_thread(knl)
+            #print(reg32_per_thread, estimate_regs_per_thread(knl))
+            reg32_per_thread = estimate_regs_per_thread(knl)
+            #reg32_per_thread = 1 #estimate_regs_per_thread(knl)
             if prefetch:
                 shared_mem_per_block = 4*BSIZEx*BSIZEy
             else:
@@ -604,7 +604,7 @@ def run_tp_trials(ctx, queue, nvals, configs_t,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
             '''
-            ops = copy.deepcopy(asmd_op32)
+            ops = copy.deepcopy(amd_op32)
             ops.append(other_op32)
             update_LS_matrix2(A, ops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
@@ -682,11 +682,11 @@ def run_conv_trials(ctx, queue, nvals, configs_t,
             op_map = get_op_poly(knl)
             op_map2 = get_op_poly2(knl)
             flops, iops = get_32b_ops(op_map, params)
-            asmd_op32 = get_32b_asmd_ops(op_map2, params)
-            other_op32 = get_32b_ops_all(op_map2, params) - sum(asmd_op32)
-            if flops + iops != sum(asmd_op32) + other_op32: #TODO remove after debug
+            amd_op32 = get_32b_amd_ops(op_map2, params)
+            other_op32 = get_32b_ops_all(op_map2, params) - sum(amd_op32)
+            if flops + iops != sum(amd_op32) + other_op32: #TODO remove after debug
                 print("<debug> PROBLEM!, ops don't add up: ",
-                        flops, iops, sum(asmd_op32), other_op32)
+                        flops, iops, sum(amd_op32), other_op32)
             #TODO why do blk sizes that don't fit perfecty increase total flops/iops
             sub_map = get_DRAM_access_poly(knl)  # noqa
             f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
@@ -708,9 +708,9 @@ def run_conv_trials(ctx, queue, nvals, configs_t,
 
             gstats = GPUStats('TeslaC2070')
             reg32_per_thread = 20 #20 for c2070, 33 for k20
-            #print(reg32_per_thread, get_regs_per_thread(knl))
-            reg32_per_thread = get_regs_per_thread(knl)
-            #reg32_per_thread = 1 #get_regs_per_thread(knl)
+            #print(reg32_per_thread, estimate_regs_per_thread(knl))
+            reg32_per_thread = estimate_regs_per_thread(knl)
+            #reg32_per_thread = 1 #estimate_regs_per_thread(knl)
             shared_mem_per_block = (ncolors * (f_w*2+1) * (f_w*2+1) +
                                     (BSIZEx+f_w*2) * (BSIZEy+f_w*2)
                                     ) * np.dtype(dtype).itemsize
@@ -732,7 +732,7 @@ def run_conv_trials(ctx, queue, nvals, configs_t,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
             '''
-            ops = copy.deepcopy(asmd_op32)
+            ops = copy.deepcopy(amd_op32)
             ops.append(other_op32)
             update_LS_matrix2(A, ops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
@@ -774,11 +774,11 @@ def run_empt_trials(ctx, queue, nvals, configs_t,
             op_map = {}
             op_map2 = {}
             flops, iops = get_32b_ops(op_map, params)
-            asmd_op32 = get_32b_asmd_ops(op_map2, params)
-            other_op32 = get_32b_ops_all(op_map2, params) - sum(asmd_op32)
-            if flops + iops != sum(asmd_op32) + other_op32: #TODO remove after debug
+            amd_op32 = get_32b_amd_ops(op_map2, params)
+            other_op32 = get_32b_ops_all(op_map2, params) - sum(amd_op32)
+            if flops + iops != sum(amd_op32) + other_op32: #TODO remove after debug
                 print("<debug> PROBLEM!, ops don't add up: ",
-                        flops, iops, sum(asmd_op32), other_op32)
+                        flops, iops, sum(amd_op32), other_op32)
             #sub_map = get_DRAM_access_poly(knl)  #TODO figure out error
             sub_map = {}
             f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
@@ -797,9 +797,9 @@ def run_empt_trials(ctx, queue, nvals, configs_t,
 
             gstats = GPUStats('TeslaC2070')
             reg32_per_thread = 2
-            #print(reg32_per_thread, get_regs_per_thread(knl))
-            reg32_per_thread = get_regs_per_thread(knl)
-            #reg32_per_thread = 1 #get_regs_per_thread(knl)
+            #print(reg32_per_thread, estimate_regs_per_thread(knl))
+            reg32_per_thread = estimate_regs_per_thread(knl)
+            #reg32_per_thread = 1 #estimate_regs_per_thread(knl)
             shared_mem_per_block = 0
             total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
             total_threads = total_blocks*BSIZEx*BSIZEy  # TODO unused
@@ -822,7 +822,7 @@ def run_empt_trials(ctx, queue, nvals, configs_t,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
             '''
-            ops = copy.deepcopy(asmd_op32)
+            ops = copy.deepcopy(amd_op32)
             ops.append(other_op32)
             update_LS_matrix2(A, ops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
@@ -875,11 +875,11 @@ def run_fd_trials(ctx, queue, nvals, configs_t,
             op_map = get_op_poly(knl)
             op_map2 = get_op_poly2(knl)
             flops, iops = get_32b_ops(op_map, params)
-            asmd_op32 = get_32b_asmd_ops(op_map2, params)
-            other_op32 = get_32b_ops_all(op_map2, params) - sum(asmd_op32)
-            if flops + iops != sum(asmd_op32) + other_op32: #TODO remove after debug
+            amd_op32 = get_32b_amd_ops(op_map2, params)
+            other_op32 = get_32b_ops_all(op_map2, params) - sum(amd_op32)
+            if flops + iops != sum(amd_op32) + other_op32: #TODO remove after debug
                 print("<debug> PROBLEM!, ops don't add up: ",
-                        flops, iops, sum(asmd_op32), other_op32)
+                        flops, iops, sum(amd_op32), other_op32)
             sub_map = get_DRAM_access_poly(knl)  # noqa
             f32coal_l, f32coal_s, f32uncoal_l, f32uncoal_s = get_DRAM_f32_accesses(
                                                                     sub_map, params)
@@ -905,9 +905,9 @@ def run_fd_trials(ctx, queue, nvals, configs_t,
             else:
                 reg32_per_thread = 15 # 16 for k20
             #'''
-            #reg32_per_thread = 1 #get_regs_per_thread(knl)
-            #print(reg32_per_thread, get_regs_per_thread(knl))
-            reg32_per_thread = get_regs_per_thread(knl)
+            #reg32_per_thread = 1 #estimate_regs_per_thread(knl)
+            #print(reg32_per_thread, estimate_regs_per_thread(knl))
+            reg32_per_thread = estimate_regs_per_thread(knl)
 
             shared_mem_per_block = 4*(BSIZEx+2)*(BSIZEy+2)
             total_blocks = math.ceil(n/BSIZEx)*math.ceil(n/BSIZEy)
@@ -930,7 +930,7 @@ def run_fd_trials(ctx, queue, nvals, configs_t,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
                              np.dtype(dtype).itemsize, model)
             '''
-            ops = copy.deepcopy(asmd_op32)
+            ops = copy.deepcopy(amd_op32)
             ops.append(other_op32)
             update_LS_matrix2(A, ops, f32coal_l, f32coal_s, f32uncoal_l,
                              f32uncoal_s, barrier_ct, total_blocks, n*n,
